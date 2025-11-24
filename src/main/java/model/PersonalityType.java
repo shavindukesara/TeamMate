@@ -21,7 +21,7 @@ public enum PersonalityType {
 
     public static PersonalityType fromScore(int score) {
         for (PersonalityType type : values()) {
-            if (score >= type.minScore && score <= type.maxScore) {
+            if (score >= type.getMinScore() && score <= type.getMaxScore()) {
                 return type;
             }
         }

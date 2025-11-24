@@ -1,16 +1,11 @@
 package service;
 
-import model.User;
-
 import java.io.*;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.logging.Logger;
-
-import static com.sun.media.sound.ModelByteBuffer.loadAll;
 
 public class AuthService {
     private static final Logger LOGGER = Logger.getLogger(AuthService.class.getName());
@@ -32,8 +27,8 @@ public class AuthService {
 
     public boolean register(String username, String plainPassword) throws IOException {
         if (username == null || username.isBlank() || plainPassword == null || plainPassword.isBlank()) return false;
-        Map<String, String> map = loadAll();
-        if (map.containsKey(username)) return false; // already exists
+        Map<String, String> all = loadAll();
+        if (all.containsKey(username)) return false;
 
         String hash = sha256Hex(plainPassword);
         try (BufferedWriter bw = Files.newBufferedWriter(USERS_FILE, StandardOpenOption.APPEND)) {
@@ -45,8 +40,8 @@ public class AuthService {
     }
 
     public boolean login(String username, String plainPassword) throws IOException {
-        Map<String, String> map = loadAll();
-        String stored = map.get(username);
+        Map<String, String> all = loadAll();
+        String stored = all.get(username);
         if (stored == null) return false;
         String hash = sha256Hex(plainPassword);
         return stored.equals(hash);
@@ -55,13 +50,11 @@ public class AuthService {
     private Map<String, String> loadAll() throws IOException {
         Map<String, String> map = new HashMap<>();
         try (BufferedReader br = Files.newBufferedReader(USERS_FILE)) {
-            String header = br.readLine(); // skip header
+            br.readLine(); // skip header
             String line;
             while ((line = br.readLine()) != null) {
                 String[] parts = line.split(",", 2);
-                if (parts.length == 2) {
-                    map.put(parts[0], parts[1]);
-                }
+                if (parts.length == 2) map.put(parts[0], parts[1]);
             }
         }
         return map;
@@ -78,5 +71,4 @@ public class AuthService {
             throw new RuntimeException(e);
         }
     }
-
 }
