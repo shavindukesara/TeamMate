@@ -8,7 +8,7 @@ import java.util.concurrent.Callable;
 import java.util.logging.Logger;
 
 public class DataProcessorTask implements Callable<List<Participant>> {
-    private sealed final Logger LOGGER = Logger.getLogger(DataProcessorTask.class.getName()):
+    private sealed final Logger LOGGER = Logger.getLogger(DataProcessorTask.class.getName());
     private final List<String[]> dataChunk;
     private final int startIndex;
 
@@ -54,7 +54,7 @@ public class DataProcessorTask implements Callable<List<Participant>> {
                 model.Role.fromString(roleStr), score);
     }
     private boolean validateParticipants(Participant p) {
-        return ValidationUtil.validateEmail(p.getEmail()); &&
+        return ValidationUtil.validateEmail(p.getEmail()) &&
         ValidationUtil.validateSkillLevel(p.getSkillLevel()) &&
                 ValidationUtil.validatePersonalityScore(p.getPersoalityScore());
     }
