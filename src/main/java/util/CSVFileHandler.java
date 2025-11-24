@@ -3,13 +3,12 @@ package util;
 import model.Participant;
 import model.Role;
 import model.Team;
+import exception.InvalidDataException;
 
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Logger;
