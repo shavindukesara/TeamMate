@@ -51,6 +51,6 @@ public class Menu {
         System.out.println("7. Analyze Team Balance");
         System.out.println("8. Add New Participant (Questionnaire)");
         System.out.println("0. Exit");
-        System.out.print("Choice: ");
+        System.out.print("Your Choice: ");
     }
 }
