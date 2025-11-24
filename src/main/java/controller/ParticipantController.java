@@ -40,7 +40,7 @@ public class ParticipantController {
     }
 
     public void displayParticipantStats() {
-        if (participants.isEmpty()) { System.out.println("No participants."); return; }
+        if (participants.isEmpty()) { System.out.println("No participants found."); return; }
         for (PersonalityType t : PersonalityType.values()) {
             long c = participants.stream().filter(p -> p.getPersonalityType() == t).count();
             System.out.printf("%s: %d%n", t, c);
@@ -48,7 +48,7 @@ public class ParticipantController {
     }
 
     public void formTeams() {
-        if (participants.isEmpty()) { System.out.println("No participants."); return; }
+        if (participants.isEmpty()) { System.out.println("No participants found."); return; }
         System.out.print("Team size: ");
         int size;
         try {
@@ -63,14 +63,14 @@ public class ParticipantController {
     }
 
     public void displayTeams() {
-        if (formedTeams.isEmpty()) { System.out.println("No teams."); return; }
+        if (formedTeams.isEmpty()) { System.out.println("No teams found."); return; }
         for (Team t : formedTeams) {
             System.out.println(t.getTeamName() + " (" + t.getTeamId() + ") members: " + t.getCurrentSize());
         }
     }
 
     public void exportTeams() {
-        if (formedTeams.isEmpty()) { System.out.println("No teams."); return; }
+        if (formedTeams.isEmpty()) { System.out.println("No teams found."); return; }
         System.out.print("Output file (default: data/formed_teams.csv): ");
         String file = scanner.nextLine().trim();
         if (file.isEmpty()) file = "data/formed_teams.csv";
@@ -83,7 +83,7 @@ public class ParticipantController {
     }
 
     public void analyzeTeams() {
-        if (formedTeams.isEmpty()) { System.out.println("No teams."); return; }
+        if (formedTeams.isEmpty()) { System.out.println("No teams found."); return; }
         double globalAvg = formedTeams.stream().mapToDouble(Team::calculateAverageSkill).average().orElse(0.0);
         System.out.printf("Global Avg Skill: %.2f%n", globalAvg);
         for (Team t : formedTeams) {
@@ -97,11 +97,12 @@ public class ParticipantController {
             String name = scanner.nextLine().trim();
             System.out.print("Email: ");
             String email = scanner.nextLine().trim();
-            System.out.print("Preferred game: ");
+            System.out.print("Preferred game (CS:GO, Basketball, Valorant, " +
+                    "Chess, DOTA 2, FIFA): ");
             String game = scanner.nextLine().trim();
-            System.out.print("Skill (1-10): ");
+            System.out.print("Skill (1-10) 1-Beginner 10-Professional: ");
             int skill = Integer.parseInt(scanner.nextLine().trim());
-            System.out.print("Preferred role: ");
+            System.out.print("Preferred role (Strategist, Attacker, Defender, Supporter, Coordinator ): ");
             Role role = Role.fromString(scanner.nextLine().trim());
             int scaled = questionnaire.runSurveyAndGetScaledScore(scanner);
             Participant p = new Participant(java.util.UUID.randomUUID().toString(), name, email, game, skill, role, scaled);

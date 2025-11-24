@@ -90,7 +90,11 @@ public class Team {
     private boolean checkPersonalityMix() {
         int leaders = countByPersonalityType(PersonalityType.LEADER);
         int thinkers = countByPersonalityType(PersonalityType.THINKER);
-        return leaders == 1 && thinkers >= 1 && thinkers <= 2;
+
+        if (leaders != 1) return false;
+        if (thinkers < 1 || thinkers > 2) return false;
+
+        return true;
     }
 
     public String getTeamId() { return teamId; }
