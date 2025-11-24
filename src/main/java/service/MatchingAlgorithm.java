@@ -32,6 +32,7 @@ public class MatchingAlgorithm {
 
         optimizeTeams(teams);
 
+        TeamRebalancer.rebalance(teams);
         validateTeams(teams);
 
         return teams;
@@ -131,21 +132,31 @@ public class MatchingAlgorithm {
         }
     }
     private static boolean trySwapMembers(Team team1, Team team2) {
-        List<Participant> members1 = team1.getMembers();
-        List<Participant> members2 = team2.getMembers();
+        List<Participant> members1 = new ArrayList<>(team1.getMembers());
+        List<Participant> members2 = new ArrayList<>(team2.getMembers());
 
         for (Participant p1 : members1) {
             for (Participant p2 : members2) {
+                if (p1 == null || p2 == null) continue;
+                if (p1.getId().equals(p2.getId())) continue;
 
                 team1.removeMember(p1);
                 team2.removeMember(p2);
-                team1.addMember(p2);
-                team1.addMember(p1);
+
+                boolean addedToT1 = team1.addMember(p2);
+                boolean addedToT2 = team2.addMember(p1);
+
+                if (!(addedToT1 && addedToT2)) {
+                    if (addedToT1) team1.removeMember(p2);
+                    if (addedToT2) team2.removeMember(p1);
+                    team1.addMember(p1);
+                    team2.addMember(p2);
+                    continue;
+                }
 
                 if (isSwapBetter(team1, team2)) {
                     return true;
                 } else {
-
                     team1.removeMember(p2);
                     team2.removeMember(p1);
                     team1.addMember(p1);
