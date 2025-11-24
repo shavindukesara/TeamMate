@@ -19,8 +19,8 @@ public class PersonalityClassifier {
 
     public static void classifyAllParticipants(List<Participant> participants) {
         for (Participant p : participants) {
-            PersonalityType type = classifyPErsonality(p.getPersoalityScore());
-            p.setPersoalityType(type);
+            PersonalityType type = classifyPErsonality(p.getPersonalityScore());
+            p.setPersonalityType(type);
         }
     }
 }

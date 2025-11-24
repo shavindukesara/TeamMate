@@ -9,25 +9,25 @@ public class Participant {
     private String preferredGame;
     private int skillLevel;
     private Role preferredRole;
-    private int persoalityScore;
-    private PersonalityType persoalityType;
+    private int personalityScore;
+    private PersonalityType personalityType;
 
-    public Participant(String id, String name, String emailt) {
+    public Participant(String id, String name, String email) {
         this.id = id;
         this.name = name;
         this.email = email;
     }
 
     public Participant(String id, String name, String email, String preferredGame,
-                       int skillLevel, Role preferredRole, int persoalityScore) {
+                       int skillLevel, Role preferredRole, int personalityScore) {
         this.id = id;
         this.name = name;
         this.email = email;
         this.preferredGame = preferredGame;
         this.skillLevel = skillLevel;
         this.preferredRole = preferredRole;
-        this.persoalityScore = persoalityScore;
-        this.personalityType = PersonalityType.fromScore(persoalityScore);
+        this.personalityScore = personalityScore;
+        this.personalityType = PersonalityType.fromScore(personalityScore);
     }
 
     public String getId() { return id; }
@@ -48,15 +48,15 @@ public class Participant {
     public Role getPreferredRole() { return preferredRole; }
     public void setPreferredRole(Role preferredRole) { this.preferredRole = preferredRole; }
 
-    public int getPersoalityScore() { return persoalityScore; }
-    public void setPersoalityScore(int persoalityScore) {
-        this.persoalityScore = persoalityScore;
-        this.persoalityType = PersonalityType.fromScore(persoalityScore);
+    public int getPersonalityScore() { return personalityScore; }
+    public void setPersonalityScore(int personalityScore) {
+        this.personalityScore = personalityScore;
+        this.personalityType = PersonalityType.fromScore(personalityScore);
     }
 
-    public PersonalityType getPersoalityType() { return persoalityType; }
-    public void setPersoalityType(PersonalityType persoalityType) {
-        this.persoalityType = persoalityType;
+    public PersonalityType getPersonalityType() { return personalityType; }
+    public void setPersonalityType(PersonalityType personalityType) {
+        this.personalityType = personalityType;
     }
 
     @Override
@@ -75,6 +75,6 @@ public class Participant {
     @Override
     public String toString() {
         return String.format("Participant{id='%s', name='%s', game='%s', skill='%s', role='%s', type='%s'}",
-                id, name, preferredGame, skillLevel, preferredRole, persoalityType);
+                id, name, preferredGame, skillLevel, preferredRole, personalityType);
     }
 }

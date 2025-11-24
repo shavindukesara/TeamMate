@@ -13,7 +13,7 @@ public class ValidationUtil {
     public static boolean validateEmail(String email) {
         return email != null && EMAIL_PATTERN.matcher(email).matches();
     }
-    public static boolean validateSkillLevel(String skillLevel) {
+    public static boolean validateSkillLevel(int skillLevel) {
         return skillLevel >= 1 && skillLevel <= 10;
     }
     public static boolean validatePersonalityScore(int score) {

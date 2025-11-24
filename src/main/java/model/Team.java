@@ -4,13 +4,14 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class Team {
+    private final String teamId;
     private int teamID;
     private String teamName;
     private List<Participant> members;
     private int maxSize;
 
     public Team(String teamId, String teamName, int maxSize) {
-        this.teamID = teamId;
+        this.teamId = teamId;
         this.teamName = teamName;
         this.maxSize = maxSize;
         this.members = new ArrayList<>();
@@ -46,7 +47,7 @@ public class Team {
     public Map<PersonalityType, Integer> getPersonalityDistribution() {
         return members.stream()
                 .collect(Collectors.groupingBy(
-                        Participant::getPersoalityType,
+                        Participant::getPersonalityType,
                         Collectors.summingInt(p -> 1)
                 ));
     }
@@ -66,7 +67,7 @@ public class Team {
 
     public int countByPersonalityType(PersonalityType type) {
         return (int) members.stream()
-                .filter(p -> p.getPersoalityType() == type)
+                .filter(p -> p.getPersonalityType() == type)
                 .count();
     }
 

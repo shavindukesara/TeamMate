@@ -54,7 +54,7 @@ public class MatchingAlgorithm {
         }
 
         for (Participant p : participants) {
-            groups.get(p.getPersoalityType()).add(p);
+            groups.get(p.getPersonalityType()).add(p);
         }
 
         Random random = new Random();

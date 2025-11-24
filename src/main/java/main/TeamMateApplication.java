@@ -52,7 +52,7 @@ public class TeamMateApplication {
             }
 
             try {
-                List<Participant> participants = CSVFileHandler.loadParticipants(filePath);
+                List<Participant> participants = CSVHandler.loadParticipants(filePath);
                 return participants;
             } catch (Exception e) {
                 LOGGER.severe("Failed to load participants: " + e.getMessage());

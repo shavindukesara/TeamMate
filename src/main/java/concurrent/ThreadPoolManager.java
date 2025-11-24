@@ -20,7 +20,7 @@ public class ThreadPoolManager {
         this.executorService = Executors.newFixedThreadPool(threadPoolSize);
         LOGGER.info("ThreadPool initialized with " + threadPoolSize + " threads");
     }
-    public <T> List<T> executeTasksAndCollect(List<Callable<T>> tasks)
+    public <T> List<T> executeTasksAndCollect(List<Callable<List<T>>> tasks)
         throws InterruptedException, ExecutionException {
         List<Future<List<T>>> futures = new ArrayList<>();
 

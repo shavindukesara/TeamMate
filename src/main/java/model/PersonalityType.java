@@ -14,13 +14,14 @@ public enum PersonalityType {
         this.minScore = minScore;
         this.maxScore = maxScore;
     }
+
     public String getDisplayName() { return displayName; }
     public int getMinScore() { return minScore; }
     public int getMaxScore() { return maxScore; }
 
     public static PersonalityType fromScore(int score) {
         for (PersonalityType type : values()) {
-            if (score >= type.MinScore && score <= type.MaxScore()) {
+            if (score >= type.minScore && score <= type.maxScore) {
                 return type;
             }
         }
