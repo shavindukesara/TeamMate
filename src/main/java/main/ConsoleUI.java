@@ -1,12 +1,16 @@
 package main;
 
 import model.*;
-import service.*;
-import util.*;
-import concurrent.*;
+import service.AuthService;
+import service.MatchingAlgorithm;
+import service.Questionnaire;
+import util.CSVHandler;
+import util.ConcurrentCSVHandler;
+import util.ValidationUtil;
 import exception.*;
 import java.util.*;
 import java.util.logging.*;
+import java.util.UUID;
 
 public class ConsoleUI {
     private static final Logger LOGGER = Logger.getLogger(ConsoleUI.class.getName());
@@ -14,9 +18,27 @@ public class ConsoleUI {
     private List<Participant> participants;
     private List<Team> formedTeams;
 
+    // New services
+    private final AuthService authService = new AuthService();
+    private final Questionnaire questionnaire = new Questionnaire();
+    private String loggedInUser = null;
+
     public void start() {
         setupLogging();
         displayWelcome();
+
+        // Authentication at startup
+        try {
+            boolean authed = showAuthMenu();
+            if (!authed) {
+                System.out.println("Continuing as guest (limited features may apply).");
+            } else {
+                System.out.println("Welcome, " + loggedInUser + "!");
+            }
+        } catch (Exception e) {
+            System.err.println("Auth error: " + e.getMessage());
+            LOGGER.warning("Auth error: " + e.getMessage());
+        }
 
         boolean running = true;
         while (running) {
@@ -44,6 +66,9 @@ public class ConsoleUI {
                     break;
                 case 7:
                     analyzeTeams();
+                    break;
+                case 8:
+                    addNewParticipantFlow();
                     break;
                 case 0:
                     running = false;
@@ -82,6 +107,52 @@ public class ConsoleUI {
         System.out.println("=".repeat(70));
     }
 
+    private boolean showAuthMenu() throws Exception {
+        System.out.println("\nAuthentication:");
+        System.out.println("1) Login");
+        System.out.println("2) Register");
+        System.out.println("3) Continue as Guest");
+        System.out.print("Choose: ");
+        String opt = scanner.nextLine().trim();
+        switch (opt) {
+            case "1": return login();
+            case "2": return register();
+            default: return false;
+        }
+    }
+
+    private boolean login() throws Exception {
+        System.out.print("Username: ");
+        String username = scanner.nextLine().trim();
+        System.out.print("Password: ");
+        String password = System.console() != null ? new String(System.console().readPassword()) : scanner.nextLine();
+        boolean ok = authService.login(username, password);
+        if (ok) {
+            loggedInUser = username;
+            System.out.println("Login successful.");
+            return true;
+        } else {
+            System.out.println("Login failed. Continue as guest? (y/N)");
+            String c = scanner.nextLine().trim();
+            return c.equalsIgnoreCase("y");
+        }
+    }
+
+    private boolean register() throws Exception {
+        System.out.print("Choose username: ");
+        String username = scanner.nextLine().trim();
+        System.out.print("Choose password: ");
+        String password = System.console() != null ? new String(System.console().readPassword()) : scanner.nextLine();
+        boolean created = authService.register(username, password);
+        if (created) {
+            System.out.println("Account created. Please login.");
+            return login();
+        } else {
+            System.out.println("Registration failed (username may exist or invalid).");
+            return false;
+        }
+    }
+
     private void displayMenu() {
         System.out.println("\n" + "-".repeat(70));
         System.out.println("MAIN MENU:");
@@ -93,6 +164,7 @@ public class ConsoleUI {
         System.out.println("5. Display Formed Teams");
         System.out.println("6. Export Teams to CSV");
         System.out.println("7. Analyze Team Balance");
+        System.out.println("8. Add New Participant (run questionnaire)");
         System.out.println("0. Exit");
         System.out.println("-".repeat(70));
         System.out.print("Enter your choice: ");
@@ -118,10 +190,8 @@ public class ConsoleUI {
             long startTime = System.currentTimeMillis();
             participants = CSVHandler.loadParticipants(filePath);
             long duration = System.currentTimeMillis() - startTime;
-
             System.out.println("✓ Successfully loaded " + participants.size() +
                     " participants in " + duration + "ms");
-
         } catch (Exception e) {
             System.err.println("✗ Failed to load participants: " + e.getMessage());
             LOGGER.severe("Load error: " + e.getMessage());
@@ -186,7 +256,7 @@ public class ConsoleUI {
         byGame.entrySet().stream()
                 .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
                 .forEach(entry -> System.out.printf("  %-15s: %3d participants\n",
-                        entry.getKey(), entry.getValue()));
+                        entry.getKey(), entry.getValue())) ;
 
         // Average skill
         double avgSkill = participants.stream()
@@ -314,7 +384,7 @@ public class ConsoleUI {
 
         for (Team team : formedTeams) {
             double teamAvg = team.calculateAverageSkill();
-            double deviation = ((teamAvg - globalAvg) / globalAvg) * 100;
+            double deviation = (globalAvg == 0.0) ? 0.0 : ((teamAvg - globalAvg) / globalAvg) * 100;
             String status = Math.abs(deviation) <= 15 ? "✓ Balanced" : "⚠ Imbalanced";
 
             System.out.printf("  %-12s: %.2f (%.1f%% deviation) %s\n",
@@ -342,6 +412,85 @@ public class ConsoleUI {
         }
 
         System.out.println("=".repeat(70));
+    }
+
+    // ========== NEW: Add a participant interactively ==========
+    private void addNewParticipantFlow() {
+        System.out.println("\nAdd New Participant");
+
+        try {
+            System.out.print("Full name: ");
+            String name = scanner.nextLine().trim();
+            if (name.isEmpty()) {
+                System.out.println("Name required.");
+                return;
+            }
+
+            System.out.print("Email: ");
+            String email = scanner.nextLine().trim();
+            if (!ValidationUtil.validateEmail(email)) {
+                System.out.println("Invalid email.");
+                return;
+            }
+
+            System.out.print("Preferred game (e.g., Chess, DOTA 2): ");
+            String game = scanner.nextLine().trim();
+            if (!ValidationUtil.validateGame(game)) {
+                System.out.println("Invalid or unsupported game.");
+                return;
+            }
+
+            System.out.print("Skill level (1-10): ");
+            int skill;
+            try {
+                skill = Integer.parseInt(scanner.nextLine().trim());
+            } catch (NumberFormatException e) {
+                System.out.println("Invalid skill level.");
+                return;
+            }
+            if (!ValidationUtil.validateSkillLevel(skill)) {
+                System.out.println("Skill level out of range.");
+                return;
+            }
+
+            System.out.print("Preferred role (STRATEGIST/ATTACKER/DEFENDER/SUPPORTER): ");
+            String roleInput = scanner.nextLine().trim();
+            Role role;
+            try {
+                role = Role.fromString(roleInput);
+            } catch (Exception e) {
+                System.out.println("Invalid role.");
+                return;
+            }
+
+            // Run questionnaire and compute scaled score
+            int scaledScore = questionnaire.runSurveyAndGetScaledScore(scanner);
+            PersonalityType pType = PersonalityType.fromScore(scaledScore);
+
+            // Create and add participant
+            String id = UUID.randomUUID().toString();
+            Participant p = new Participant(id, name, email, game, skill, role, scaledScore);
+
+            if (participants == null) participants = new ArrayList<>();
+            participants.add(p);
+
+            System.out.println("\nNew participant created:");
+            System.out.println("  ID: " + p.getId());
+            System.out.println("  Name: " + p.getName());
+            System.out.println("  Email: " + p.getEmail());
+            System.out.println("  Game: " + p.getPreferredGame());
+            System.out.println("  Skill: " + p.getSkillLevel());
+            System.out.println("  Role: " + p.getPreferredRole());
+            System.out.println("  Personality score: " + p.getPersonalityScore());
+            System.out.println("  Personality type: " + pType.getDisplayName());
+
+            // Optionally persist here: append to CSV or to your data store.
+            // e.g., CSVHandler.appendParticipantToCsv(p, "data/participants_sample.csv");
+
+        } catch (Exception e) {
+            System.err.println("Failed to add participant: " + e.getMessage());
+            LOGGER.warning("Add participant error: " + e.getMessage());
+        }
     }
 
     public static void main(String[] args) {
