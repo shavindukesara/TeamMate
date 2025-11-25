@@ -13,12 +13,15 @@ public class ValidationUtil {
     public static boolean validateEmail(String email) {
         return email != null && EMAIL_PATTERN.matcher(email).matches();
     }
+
     public static boolean validateSkillLevel(int skillLevel) {
         return skillLevel >= 1 && skillLevel <= 10;
     }
+
     public static boolean validatePersonalityScore(int score) {
         return score >= 0 && score <= 100;
     }
+
     public static boolean validateRole(String role) {
         try {
             Role.fromString(role);
@@ -38,6 +41,6 @@ public class ValidationUtil {
     }
 
     public static boolean validateTeamSize(int size, int totalparticipants) {
-        return size >= 3 && size <= 10 && totalparticipants >= size * 2;
+        return size >= 1 && size <= 10 && totalparticipants >= size * 2;
     }
 }
