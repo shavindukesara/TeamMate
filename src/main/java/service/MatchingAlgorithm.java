@@ -3,7 +3,13 @@ package service;
 import model.*;
 import exception.TeamFormationException;
 
+import java.io.FileWriter;
+import java.io.PrintWriter;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.logging.Logger;
 
 public class MatchingAlgorithm {
@@ -11,8 +17,17 @@ public class MatchingAlgorithm {
     private static final int MAX_SAME_GAME = 2;
     private static final int MIN_ROLES = 3;
     private static final Scanner SCANNER = new Scanner(System.in);
+    private static final long DETERMINISTIC_SEED = 42L;
 
+    // --- Backwards-compatible overload (keeps existing callers working) ---
     public static List<Team> matchParticipants(List<Participant> participants, int teamSize)
+            throws TeamFormationException {
+        // default to true = random mode to preserve previous behavior of no-arg version
+        return matchParticipants(participants, teamSize, true);
+    }
+
+    // --- New API: allows randomness mode selection ---
+    public static List<Team> matchParticipants(List<Participant> participants, int teamSize, boolean randomMode)
             throws TeamFormationException {
 
         if (participants == null || participants.isEmpty()) throw new TeamFormationException("No participants provided");
@@ -21,24 +36,58 @@ public class MatchingAlgorithm {
         int numTeams = participants.size() / teamSize;
         if (numTeams == 0) throw new TeamFormationException("Team size too large for participant count");
 
-        List<Team> teams = initializeTeams(numTeams, teamSize);
+        Random random = randomMode ? new Random() : new Random(DETERMINISTIC_SEED);
+        LOGGER.info("Team formation randomness mode: " + (randomMode ? "RANDOM" : "DETERMINISTIC"));
 
-        Map<PersonalityType, List<Participant>> byPersonality = groupByPersonality(participants);
+        Map<PersonalityType, Queue<Participant>> pools = groupByPersonalityQueues(participants, random);
 
-        List<Participant> leaders = byPersonality.getOrDefault(PersonalityType.LEADER, new ArrayList<>());
-        List<Participant> thinkers = byPersonality.getOrDefault(PersonalityType.THINKER, new ArrayList<>());
-        List<Participant> balanced = byPersonality.getOrDefault(PersonalityType.BALANCED, new ArrayList<>());
+        Queue<Participant> leadersQ = pools.getOrDefault(PersonalityType.LEADER, new ConcurrentLinkedQueue<>());
+        Queue<Participant> thinkersQ = pools.getOrDefault(PersonalityType.THINKER, new ConcurrentLinkedQueue<>());
+        Queue<Participant> balancedQ = pools.getOrDefault(PersonalityType.BALANCED, new ConcurrentLinkedQueue<>());
 
-        for (Team team : teams) {
-            assignForTeam(team, teamSize, leaders, thinkers, balanced);
+        ConcurrentLinkedQueue<Participant> globalLeftovers = new ConcurrentLinkedQueue<>();
+
+        int threads = Math.max(1, Runtime.getRuntime().availableProcessors());
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+
+        List<Callable<Team>> tasks = new ArrayList<>();
+        for (int i = 0; i < numTeams; i++) {
+            final int teamIndex = i;
+            tasks.add(() -> {
+                Team team = new Team("T" + (teamIndex + 1), "Team " + (teamIndex + 1), teamSize);
+                List<Participant> reserved = new ArrayList<>();
+                boolean success = tryBuildValidTeam(team, teamSize, leadersQ, thinkersQ, balancedQ, reserved, random);
+                if (!success) {
+                    for (Participant p : reserved) globalLeftovers.add(p);
+                    return null;
+                }
+                return team;
+            });
+        }
+
+        List<Team> teams = new ArrayList<>();
+        try {
+            List<Future<Team>> futures = executor.invokeAll(tasks);
+            for (Future<Team> f : futures) {
+                try {
+                    Team t = f.get();
+                    if (t != null) teams.add(t);
+                } catch (ExecutionException ee) {
+                    LOGGER.warning("Team creation task failed: " + ee.getMessage());
+                }
+            }
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw new TeamFormationException("Team formation interrupted");
+        } finally {
+            executor.shutdown();
         }
 
         List<Participant> leftovers = new ArrayList<>();
-        leftovers.addAll(leaders);
-        leftovers.addAll(thinkers);
-        leftovers.addAll(balanced);
-
-        optimizeTeams(teams);
+        drainQueueToList(leadersQ, leftovers);
+        drainQueueToList(thinkersQ, leftovers);
+        drainQueueToList(balancedQ, leftovers);
+        drainQueueToList(globalLeftovers, leftovers);
 
         TeamRebalancer.rebalance(teams);
 
@@ -63,22 +112,174 @@ public class MatchingAlgorithm {
             System.out.print("Choose: ");
             String choice = SCANNER.nextLine().trim();
             if ("1".equals(choice)) {
-                List<Team> extra = createExtraTeamsFromLeftovers(leftovers, teamSize, teams.size());
+                List<Team> extra = createExtraTeamsFromLeftovers(leftovers, teamSize, teams.size(), random);
                 teams.addAll(extra);
                 if (!extra.isEmpty()) LOGGER.warning("Created " + extra.size() + " extra team(s) from leftovers (may be unbalanced)");
+                leftovers.clear();
             } else {
                 LOGGER.info("User chose not to create extra teams for leftover participants");
             }
         }
+
+        writeLeftoversCsv(leftovers);
 
         validateTeams(teams);
 
         return teams;
     }
 
-    private static List<Team> createExtraTeamsFromLeftovers(List<Participant> leftovers, int teamSize, int existingCount) {
+    private static boolean tryBuildValidTeam(Team team,
+                                             int teamSize,
+                                             Queue<Participant> leadersQ,
+                                             Queue<Participant> thinkersQ,
+                                             Queue<Participant> balancedQ,
+                                             List<Participant> reserved,
+                                             Random random) {
+
+        List<Participant> members = new ArrayList<>();
+
+        Participant p = pollCandidateFromQueue(leadersQ, team);
+        if (p != null) { members.add(p); reserved.add(p); team.addMember(p); }
+        else return false;
+
+        int targetThinkers;
+        if (teamSize == 1) targetThinkers = 0;
+        else if (teamSize == 2) targetThinkers = 1;
+        else if (teamSize == 3) targetThinkers = 2;
+        else targetThinkers = Math.min(2, Math.max(1, teamSize / 4));
+
+        int assignedThinkers = 0;
+        while (assignedThinkers < targetThinkers && !team.isFull()) {
+            Participant t = pollCandidateFromQueue(thinkersQ, team);
+            if (t == null) break;
+            members.add(t); reserved.add(t); team.addMember(t);
+            assignedThinkers++;
+        }
+
+        if ((teamSize == 2 || teamSize == 3) && assignedThinkers < targetThinkers) {
+            while (assignedThinkers < targetThinkers && !team.isFull()) {
+                Participant b = pollCandidateFromQueue(balancedQ, team);
+                if (b == null) break;
+                members.add(b); reserved.add(b); team.addMember(b);
+                assignedThinkers++;
+            }
+        }
+
+        while (!team.isFull()) {
+            Participant b = pollCandidateFromQueue(balancedQ, team);
+            if (b == null) break;
+            members.add(b); reserved.add(b); team.addMember(b);
+        }
+
+        while (!team.isFull()) {
+            Participant any = pollAnyFromQueues(leadersQ, thinkersQ, balancedQ);
+            if (any == null) break;
+            members.add(any); reserved.add(any); team.addMember(any);
+        }
+
+        if (!satisfiesPersonalityRule(team)) {
+            for (Participant rp : reserved) {
+                try { team.removeMember(rp); } catch (Exception ignored) {}
+            }
+            return false;
+        }
+
+        if (team.getUniqueRoleCount() < MIN_ROLES) {
+            boolean improved = tryImproveRoleDiversity(team, leadersQ, thinkersQ, balancedQ, reserved, random);
+            if (!improved && team.getUniqueRoleCount() < MIN_ROLES) {
+                for (Participant rp : reserved) {
+                    try { team.removeMember(rp); } catch (Exception ignored) {}
+                }
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static boolean tryImproveRoleDiversity(Team team,
+                                                   Queue<Participant> leadersQ,
+                                                   Queue<Participant> thinkersQ,
+                                                   Queue<Participant> balancedQ,
+                                                   List<Participant> reserved,
+                                                   Random random) {
+        Set<Role> present = new HashSet<>();
+        for (Participant m : team.getMembers()) present.add(m.getPreferredRole());
+        List<Role> missing = new ArrayList<>();
+        for (Role r : Role.values()) if (!present.contains(r)) missing.add(r);
+        if (missing.isEmpty()) return true;
+        List<Queue<Participant>> pools = Arrays.asList(balancedQ, thinkersQ, leadersQ);
+        for (Queue<Participant> pool : pools) {
+            synchronized (pool) {
+                Iterator<Participant> it = pool.iterator();
+                while (it.hasNext()) {
+                    Participant candidate = it.next();
+                    if (missing.contains(candidate.getPreferredRole()) && canAddToTeam(team, candidate)) {
+                        Participant toRemove = team.getMembers().stream()
+                                .filter(m -> !missing.contains(m.getPreferredRole()))
+                                .findFirst().orElse(null);
+                        if (toRemove == null) toRemove = team.getMembers().get(0);
+                        boolean removed = team.removeMember(toRemove);
+                        if (removed) {
+                            boolean removedFromPool = pool.remove(candidate);
+                            if (removedFromPool) {
+                                team.addMember(candidate);
+                                reserved.add(candidate);
+                                reserved.add(toRemove);
+                                return true;
+                            } else {
+                                team.addMember(toRemove);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private static Participant pollAnyFromQueues(Queue<Participant> a, Queue<Participant> b, Queue<Participant> c) {
+        Participant p = pollAnyFromQueue(a);
+        if (p != null) return p;
+        p = pollAnyFromQueue(b);
+        if (p != null) return p;
+        return pollAnyFromQueue(c);
+    }
+
+    private static Participant pollAnyFromQueue(Queue<Participant> q) {
+        return q == null ? null : q.poll();
+    }
+
+    private static Participant pollCandidateFromQueue(Queue<Participant> q, Team team) {
+        if (q == null || q.isEmpty()) return null;
+        synchronized (q) {
+            Iterator<Participant> it = q.iterator();
+            while (it.hasNext()) {
+                Participant p = it.next();
+                if (canAddToTeam(team, p)) {
+                    boolean removed = q.remove(p);
+                    if (removed) return p;
+                }
+            }
+            return q.poll();
+        }
+    }
+
+    private static Map<PersonalityType, Queue<Participant>> groupByPersonalityQueues(List<Participant> participants, Random random) {
+        Map<PersonalityType, List<Participant>> groups = new EnumMap<>(PersonalityType.class);
+        for (PersonalityType type : PersonalityType.values()) groups.put(type, new ArrayList<>());
+        for (Participant p : participants) groups.get(p.getPersonalityType()).add(p);
+        for (List<Participant> list : groups.values()) Collections.shuffle(list, random);
+        Map<PersonalityType, Queue<Participant>> queues = new EnumMap<>(PersonalityType.class);
+        for (Map.Entry<PersonalityType, List<Participant>> e : groups.entrySet()) {
+            queues.put(e.getKey(), new ConcurrentLinkedQueue<>(e.getValue()));
+        }
+        return queues;
+    }
+
+    private static List<Team> createExtraTeamsFromLeftovers(List<Participant> leftovers, int teamSize, int existingCount, Random random) {
         List<Team> extras = new ArrayList<>();
-        Collections.shuffle(leftovers, new Random());
+        Collections.shuffle(leftovers, random);
         int index = 0;
         int teamCounter = existingCount;
         while (index < leftovers.size()) {
@@ -95,167 +296,53 @@ public class MatchingAlgorithm {
         return extras;
     }
 
-    private static void assignForTeam(Team team, int teamSize,
-                                      List<Participant> leaders,
-                                      List<Participant> thinkers,
-                                      List<Participant> balanced) {
+    private static void drainQueueToList(Queue<Participant> q, List<Participant> out) {
+        Participant p;
+        while ((p = q.poll()) != null) out.add(p);
+    }
 
-        if (teamSize == 1) {
-            Participant leader = pollCandidate(leaders, team);
-            if (leader != null) { team.addMember(leader); return; }
-            Participant thinker = pollCandidate(thinkers, team);
-            if (thinker != null) { team.addMember(thinker); return; }
-            Participant bal = pollCandidate(balanced, team);
-            if (bal != null) team.addMember(bal);
-            return;
-        }
-
-        if (teamSize == 2) {
-            Participant leader = pollCandidate(leaders, team);
-            if (leader != null) {
-                team.addMember(leader);
-                Participant thinker = pollCandidate(thinkers, team);
-                if (thinker != null) { team.addMember(thinker); return; }
-                Participant bal = pollCandidate(balanced, team);
-                if (bal != null) { team.addMember(bal); return; }
-                Participant thinkerAny = pollAny(thinkers);
-                if (thinkerAny != null) { team.addMember(thinkerAny); return; }
-                Participant balAny = pollAny(balanced);
-                if (balAny != null) { team.addMember(balAny); return; }
-                return;
-            } else {
-                Participant thinkerOnly = pollCandidate(thinkers, team);
-                if (thinkerOnly != null) {
-                    team.addMember(thinkerOnly);
-                    Participant bal = pollCandidate(balanced, team);
-                    if (bal != null) { team.addMember(bal); LOGGER.warning(team.getTeamId() + " had no leader; formed with thinker + balanced"); return; }
-                    Participant balAny = pollAny(balanced);
-                    if (balAny != null) { team.addMember(balAny); LOGGER.warning(team.getTeamId() + " had no leader; formed with thinker + balanced (fallback)"); return; }
+    private static void writeLeftoversCsv(List<Participant> leftovers) {
+        try {
+            Path dir = Paths.get("data");
+            Files.createDirectories(dir);
+            Path file = dir.resolve("leftovers.csv");
+            try (PrintWriter pw = new PrintWriter(new FileWriter(file.toFile(), false))) {
+                pw.println("ID,Name,Email,PreferredGame,SkillLevel,PreferredRole,PersonalityScore,PersonalityType");
+                for (Participant p : leftovers) {
+                    String id = safe(p.getId());
+                    String name = safe(p.getName());
+                    String email = safe(p.getEmail());
+                    String game = safe(p.getPreferredGame());
+                    String skill = String.valueOf(p.getSkillLevel());
+                    String role = p.getPreferredRole() != null ? safe(p.getPreferredRole().name()) : "";
+                    String score = "";
+                    try { score = String.valueOf(p.getPersonalityScore()); } catch (Exception e) { score = ""; }
+                    String ptype = p.getPersonalityType() != null ? safe(p.getPersonalityType().name()) : "";
+                    pw.printf("%s,%s,%s,%s,%s,%s,%s,%s%n",
+                            escapeCsv(id), escapeCsv(name), escapeCsv(email), escapeCsv(game),
+                            skill, escapeCsv(role), score, escapeCsv(ptype));
                 }
-                Participant balAny = pollAny(balanced);
-                if (balAny != null) team.addMember(balAny);
-                Participant any = pollAny(leaders);
-                if (any != null) team.addMember(any);
-                return;
             }
-        }
-
-        Participant leader = pollCandidate(leaders, team);
-        if (leader != null) team.addMember(leader);
-
-        int targetThinkers;
-        if (teamSize == 3) targetThinkers = 2;
-        else targetThinkers = Math.min(2, Math.max(1, teamSize / 4));
-
-        int assignedThinkers = 0;
-        while (assignedThinkers < targetThinkers && !thinkers.isEmpty() && !team.isFull()) {
-            Participant t = pollCandidate(thinkers, team);
-            if (t == null) break;
-            team.addMember(t);
-            assignedThinkers++;
-        }
-
-        while (!team.isFull() && !balanced.isEmpty()) {
-            Participant b = pollCandidate(balanced, team);
-            if (b == null) break;
-            team.addMember(b);
-        }
-
-        while (!team.isFull()) {
-            Participant any = pollAnyFromPools(leaders, thinkers, balanced);
-            if (any == null) break;
-            team.addMember(any);
+            LOGGER.info("Leftovers written to: " + new java.io.File("data/leftovers.csv").getAbsolutePath());
+        } catch (Exception e) {
+            LOGGER.warning("Failed to write leftovers.csv: " + e.getMessage());
         }
     }
 
-    private static Participant pollAnyFromPools(List<Participant> leaders, List<Participant> thinkers, List<Participant> balanced) {
-        if (!leaders.isEmpty()) return pollAny(leaders);
-        if (!thinkers.isEmpty()) return pollAny(thinkers);
-        if (!balanced.isEmpty()) return pollAny(balanced);
-        return null;
+    private static String safe(String s) {
+        return s == null ? "" : s;
     }
 
-    private static Participant pollAny(List<Participant> list) {
-        if (list == null || list.isEmpty()) return null;
-        return list.remove(0);
-    }
-
-    private static Participant pollCandidate(List<Participant> list, Team team) {
-        if (list == null || list.isEmpty()) return null;
-        for (int i = 0; i < list.size(); i++) {
-            Participant p = list.get(i);
-            if (canAddToTeam(team, p)) {
-                list.remove(i);
-                return p;
-            }
-        }
-        return list.remove(0);
-    }
-
-    private static List<Team> initializeTeams(int numTeams, int teamSize) {
-        List<Team> teams = new ArrayList<>();
-        for (int i = 0; i < numTeams; i++) teams.add(new Team("T" + (i + 1), "Team " + (i + 1), teamSize));
-        return teams;
-    }
-
-    private static Map<PersonalityType, List<Participant>> groupByPersonality(
-            List<Participant> participants) {
-        Map<PersonalityType, List<Participant>> groups = new EnumMap<>(PersonalityType.class);
-        for (PersonalityType type : PersonalityType.values()) groups.put(type, new ArrayList<>());
-        for (Participant p : participants) groups.get(p.getPersonalityType()).add(p);
-        Random random = new Random();
-        for (List<Participant> group : groups.values()) Collections.shuffle(group, random);
-        return groups;
+    private static String escapeCsv(String s) {
+        if (s == null) return "";
+        boolean need = s.contains(",") || s.contains("\"") || s.contains("\n") || s.contains("\r");
+        String esc = s.replace("\"", "\"\"");
+        return need ? "\"" + esc + "\"" : esc;
     }
 
     private static boolean canAddToTeam(Team team, Participant participant) {
         if (team.countByGame(participant.getPreferredGame()) >= MAX_SAME_GAME) return false;
         return true;
-    }
-
-    private static void optimizeTeams(List<Team> teams) {
-        for (int iteration = 0; iteration < 10; iteration++) {
-            boolean improved = false;
-            for (int i = 0; i < teams.size(); i++) {
-                for (int j = i + 1; j < teams.size(); j++) {
-                    if (trySwapMembers(teams.get(i), teams.get(j))) improved = true;
-                }
-            }
-            if (!improved) break;
-        }
-    }
-
-    private static boolean trySwapMembers(Team team1, Team team2) {
-        List<Participant> members1 = new ArrayList<>(team1.getMembers());
-        List<Participant> members2 = new ArrayList<>(team2.getMembers());
-        for (Participant p1 : members1) {
-            for (Participant p2 : members2) {
-                if (p1 == null || p2 == null) continue;
-                if (p1.getId().equals(p2.getId())) continue;
-                team1.removeMember(p1);
-                team2.removeMember(p2);
-                boolean addedToT1 = team1.addMember(p2);
-                boolean addedToT2 = team2.addMember(p1);
-                if (!(addedToT1 && addedToT2)) {
-                    if (addedToT1) team1.removeMember(p2);
-                    if (addedToT2) team2.removeMember(p1);
-                    team1.addMember(p1);
-                    team2.addMember(p2);
-                    continue;
-                }
-                if (isSwapBetter(team1, team2)) return true;
-                team1.removeMember(p2);
-                team2.removeMember(p1);
-                team1.addMember(p1);
-                team2.addMember(p2);
-            }
-        }
-        return false;
-    }
-
-    private static boolean isSwapBetter(Team team1, Team team2) {
-        return team1.getUniqueRoleCount() >= MIN_ROLES &&
-                team2.getUniqueRoleCount() >= MIN_ROLES;
     }
 
     private static void validateTeams(List<Team> teams) throws TeamFormationException {

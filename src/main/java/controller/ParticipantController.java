@@ -54,8 +54,28 @@ public class ParticipantController {
         try {
             size = Integer.parseInt(scanner.nextLine().trim());
         } catch (NumberFormatException e) { System.out.println("Invalid."); return; }
+
+        // Randomness mode prompt
+        boolean randomMode = true; // default to random if user enters invalid input
+        while (true) {
+            System.out.println("\nRandomness Mode:");
+            System.out.println("1) Random balanced teams (different results every time)");
+            System.out.println("2) Deterministic balanced teams (same result every time)");
+            System.out.print("Choose (1 or 2): ");
+            String rm = scanner.nextLine().trim();
+            if ("1".equals(rm)) {
+                randomMode = true;
+                break;
+            } else if ("2".equals(rm)) {
+                randomMode = false;
+                break;
+            } else {
+                System.out.println("Invalid choice. Please enter 1 or 2.");
+            }
+        }
+
         try {
-            formedTeams = new ArrayList<>(MatchingAlgorithm.matchParticipants(participants, size));
+            formedTeams = new ArrayList<>(MatchingAlgorithm.matchParticipants(participants, size, randomMode));
             System.out.println("Formed " + formedTeams.size() + " teams.");
         } catch (TeamFormationException e) {
             System.err.println("Formation failed: " + e.getMessage());
