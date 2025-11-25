@@ -19,14 +19,11 @@ public class MatchingAlgorithm {
     private static final Scanner SCANNER = new Scanner(System.in);
     private static final long DETERMINISTIC_SEED = 42L;
 
-    // --- Backwards-compatible overload (keeps existing callers working) ---
     public static List<Team> matchParticipants(List<Participant> participants, int teamSize)
             throws TeamFormationException {
-        // default to true = random mode to preserve previous behavior of no-arg version
         return matchParticipants(participants, teamSize, true);
     }
 
-    // --- New API: allows randomness mode selection ---
     public static List<Team> matchParticipants(List<Participant> participants, int teamSize, boolean randomMode)
             throws TeamFormationException {
 
@@ -38,6 +35,8 @@ public class MatchingAlgorithm {
 
         Random random = randomMode ? new Random() : new Random(DETERMINISTIC_SEED);
         LOGGER.info("Team formation randomness mode: " + (randomMode ? "RANDOM" : "DETERMINISTIC"));
+
+        double globalAvgSkill = participants.stream().mapToInt(Participant::getSkillLevel).average().orElse(5.5);
 
         Map<PersonalityType, Queue<Participant>> pools = groupByPersonalityQueues(participants, random);
 
@@ -56,7 +55,7 @@ public class MatchingAlgorithm {
             tasks.add(() -> {
                 Team team = new Team("T" + (teamIndex + 1), "Team " + (teamIndex + 1), teamSize);
                 List<Participant> reserved = new ArrayList<>();
-                boolean success = tryBuildValidTeam(team, teamSize, leadersQ, thinkersQ, balancedQ, reserved, random);
+                boolean success = tryBuildValidTeam(team, teamSize, leadersQ, thinkersQ, balancedQ, reserved, random, globalAvgSkill);
                 if (!success) {
                     for (Participant p : reserved) globalLeftovers.add(p);
                     return null;
@@ -134,62 +133,142 @@ public class MatchingAlgorithm {
                                              Queue<Participant> thinkersQ,
                                              Queue<Participant> balancedQ,
                                              List<Participant> reserved,
-                                             Random random) {
+                                             Random random,
+                                             double globalAvgSkill) {
 
-        List<Participant> members = new ArrayList<>();
+        if (teamSize == 1) {
+            Participant leader = pollCandidateFromQueue(leadersQ, team, globalAvgSkill);
+            if (leader != null) { team.addMember(leader); reserved.add(leader); return true; }
+            Participant thinker = pollCandidateFromQueue(thinkersQ, team, globalAvgSkill);
+            if (thinker != null) { team.addMember(thinker); reserved.add(thinker); return true; }
+            Participant bal = pollCandidateFromQueue(balancedQ, team, globalAvgSkill);
+            if (bal != null) { team.addMember(bal); reserved.add(bal); return true; }
+            return false;
+        }
 
-        Participant p = pollCandidateFromQueue(leadersQ, team);
-        if (p != null) { members.add(p); reserved.add(p); team.addMember(p); }
-        else return false;
+        if (teamSize == 2) {
+            Participant leader = pollCandidateFromQueue(leadersQ, team, globalAvgSkill);
+            if (leader != null) {
+                team.addMember(leader); reserved.add(leader);
+                Participant thinker = pollCandidateFromQueue(thinkersQ, team, globalAvgSkill);
+                if (thinker != null) { team.addMember(thinker); reserved.add(thinker); return true; }
+                Participant bal = pollCandidateFromQueue(balancedQ, team, globalAvgSkill);
+                if (bal != null) { team.addMember(bal); reserved.add(bal); return true; }
+                Participant thinkerAny = pollAnyFromQueue(thinkersQ);
+                if (thinkerAny != null) { team.addMember(thinkerAny); reserved.add(thinkerAny); return true; }
+                return false;
+            } else {
+                Participant thinkerOnly = pollCandidateFromQueue(thinkersQ, team, globalAvgSkill);
+                if (thinkerOnly != null) {
+                    team.addMember(thinkerOnly); reserved.add(thinkerOnly);
+                    Participant bal = pollCandidateFromQueue(balancedQ, team, globalAvgSkill);
+                    if (bal != null) { team.addMember(bal); reserved.add(bal); return true; }
+                    Participant balAny = pollAnyFromQueue(balancedQ);
+                    if (balAny != null) { team.addMember(balAny); reserved.add(balAny); return true; }
+                }
+                return false;
+            }
+        }
+
+        if (teamSize == 3) {
+            Participant leader = pollCandidateFromQueue(leadersQ, team, globalAvgSkill);
+            if (leader == null) return false;
+            team.addMember(leader); reserved.add(leader);
+
+            int assignedThinkers = 0;
+            for (int i = 0; i < 2 && !team.isFull(); i++) {
+                Participant t = pollCandidateFromQueue(thinkersQ, team, globalAvgSkill);
+                if (t != null) { team.addMember(t); reserved.add(t); assignedThinkers++; }
+            }
+
+            if (assignedThinkers == 2) {
+            } else if (assignedThinkers == 1) {
+                Participant b = pollCandidateFromQueue(balancedQ, team, globalAvgSkill);
+                if (b != null) { team.addMember(b); reserved.add(b); }
+                else {
+                    Participant any = pollAnyFromQueues(leadersQ, thinkersQ, balancedQ);
+                    if (any != null) { team.addMember(any); reserved.add(any); }
+                }
+            } else {
+                Participant b1 = pollCandidateFromQueue(balancedQ, team, globalAvgSkill);
+                Participant b2 = pollCandidateFromQueue(balancedQ, team, globalAvgSkill);
+                if (b1 != null) { team.addMember(b1); reserved.add(b1); }
+                if (b2 != null) { team.addMember(b2); reserved.add(b2); }
+                if (team.getCurrentSize() < 3) {
+                    Participant any = pollAnyFromQueues(leadersQ, thinkersQ, balancedQ);
+                    if (any != null) { team.addMember(any); reserved.add(any); }
+                }
+            }
+
+            if (!satisfiesPersonalityRule(team)) {
+                for (Participant rp : reserved) try { team.removeMember(rp); } catch (Exception ignored) {}
+                return false;
+            }
+
+            if (team.getUniqueRoleCount() < MIN_ROLES) {
+                boolean improved = tryImproveRoleDiversity(team, leadersQ, thinkersQ, balancedQ, reserved, random);
+                if (!improved && team.getUniqueRoleCount() < MIN_ROLES) {
+                    for (Participant rp : reserved) try { team.removeMember(rp); } catch (Exception ignored) {}
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        Participant leader = pollCandidateFromQueue(leadersQ, team, globalAvgSkill);
+        if (leader == null) return false;
+        team.addMember(leader); reserved.add(leader);
 
         int targetThinkers;
-        if (teamSize == 1) targetThinkers = 0;
-        else if (teamSize == 2) targetThinkers = 1;
-        else if (teamSize == 3) targetThinkers = 2;
-        else targetThinkers = Math.min(2, Math.max(1, teamSize / 4));
+        synchronized (thinkersQ) {
+            if (thinkersQ.size() >= 2) {
+                targetThinkers = Math.min(2, teamSize - 1);
+            } else {
+                targetThinkers = 1;
+            }
+        }
 
         int assignedThinkers = 0;
         while (assignedThinkers < targetThinkers && !team.isFull()) {
-            Participant t = pollCandidateFromQueue(thinkersQ, team);
+            Participant t = pollCandidateFromQueue(thinkersQ, team, globalAvgSkill);
             if (t == null) break;
-            members.add(t); reserved.add(t); team.addMember(t);
-            assignedThinkers++;
+            team.addMember(t); reserved.add(t); assignedThinkers++;
         }
 
-        if ((teamSize == 2 || teamSize == 3) && assignedThinkers < targetThinkers) {
+        if (assignedThinkers < targetThinkers) {
             while (assignedThinkers < targetThinkers && !team.isFull()) {
-                Participant b = pollCandidateFromQueue(balancedQ, team);
-                if (b == null) break;
-                members.add(b); reserved.add(b); team.addMember(b);
-                assignedThinkers++;
+                Participant t = pollAnyFromQueue(thinkersQ);
+                if (t == null) break;
+                if (canAddToTeam(team, t)) {
+                    team.addMember(t); reserved.add(t); assignedThinkers++;
+                } else {
+                    reserved.add(t);
+                }
             }
         }
 
         while (!team.isFull()) {
-            Participant b = pollCandidateFromQueue(balancedQ, team);
+            Participant b = pollCandidateFromQueue(balancedQ, team, globalAvgSkill);
             if (b == null) break;
-            members.add(b); reserved.add(b); team.addMember(b);
+            team.addMember(b); reserved.add(b);
         }
 
         while (!team.isFull()) {
             Participant any = pollAnyFromQueues(leadersQ, thinkersQ, balancedQ);
             if (any == null) break;
-            members.add(any); reserved.add(any); team.addMember(any);
+            team.addMember(any); reserved.add(any);
         }
 
         if (!satisfiesPersonalityRule(team)) {
-            for (Participant rp : reserved) {
-                try { team.removeMember(rp); } catch (Exception ignored) {}
-            }
+            for (Participant rp : reserved) try { team.removeMember(rp); } catch (Exception ignored) {}
             return false;
         }
 
         if (team.getUniqueRoleCount() < MIN_ROLES) {
             boolean improved = tryImproveRoleDiversity(team, leadersQ, thinkersQ, balancedQ, reserved, random);
             if (!improved && team.getUniqueRoleCount() < MIN_ROLES) {
-                for (Participant rp : reserved) {
-                    try { team.removeMember(rp); } catch (Exception ignored) {}
-                }
+                for (Participant rp : reserved) try { team.removeMember(rp); } catch (Exception ignored) {}
                 return false;
             }
         }
@@ -250,16 +329,22 @@ public class MatchingAlgorithm {
         return q == null ? null : q.poll();
     }
 
-    private static Participant pollCandidateFromQueue(Queue<Participant> q, Team team) {
+    private static Participant pollCandidateFromQueue(Queue<Participant> q, Team team, double targetSkill) {
         if (q == null || q.isEmpty()) return null;
         synchronized (q) {
-            Iterator<Participant> it = q.iterator();
-            while (it.hasNext()) {
-                Participant p = it.next();
-                if (canAddToTeam(team, p)) {
-                    boolean removed = q.remove(p);
-                    if (removed) return p;
+            Participant best = null;
+            double bestDiff = Double.MAX_VALUE;
+            for (Participant p : q) {
+                if (!canAddToTeam(team, p)) continue;
+                double diff = Math.abs(p.getSkillLevel() - targetSkill);
+                if (diff < bestDiff) {
+                    bestDiff = diff;
+                    best = p;
                 }
+            }
+            if (best != null) {
+                q.remove(best);
+                return best;
             }
             return q.poll();
         }
@@ -366,6 +451,16 @@ public class MatchingAlgorithm {
     private static boolean satisfiesPersonalityRule(Team t) {
         int leaders = countByPersonality(t, PersonalityType.LEADER);
         int thinkers = countByPersonality(t, PersonalityType.THINKER);
+        if (t.getMaxSize() == 1) {
+            return leaders == 1 || thinkers == 1 || countByPersonality(t, PersonalityType.BALANCED) == 1;
+        }
+        if (t.getMaxSize() == 2) {
+            return (leaders == 1 && (thinkers >= 1 || countByPersonality(t, PersonalityType.BALANCED) >= 1))
+                    || (leaders == 0 && thinkers >= 1 && countByPersonality(t, PersonalityType.BALANCED) >= 1);
+        }
+        if (t.getMaxSize() == 3) {
+            return leaders == 1 && (thinkers >= 1 || countByPersonality(t, PersonalityType.BALANCED) >= 2);
+        }
         return leaders == 1 && thinkers >= 1 && thinkers <= 2;
     }
 
