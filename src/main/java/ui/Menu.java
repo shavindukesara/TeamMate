@@ -2,10 +2,6 @@ package ui;
 
 import controller.AuthController;
 import controller.ParticipantController;
-import model.Participant;
-import model.Team;
-
-import java.util.List;
 import java.util.Scanner;
 
 public class Menu {
@@ -15,9 +11,9 @@ public class Menu {
 
     public void start() {
         if (authController.launchAuthFlow()) {
-            System.out.println("Authenticated as: " + authController.getLoggedInUser());
+            System.out.println("Logged in as: " + authController.getLoggedInUser());
         } else {
-            System.out.println("Continuing as guest.");
+            System.out.println("\n            Continuing as guest...");
         }
 
         boolean running = true;
@@ -37,20 +33,23 @@ public class Menu {
                 default -> System.out.println("Invalid choice.");
             }
         }
-        System.out.println("Goodbye.");
+        System.out.println("=".repeat(55));
+        System.out.println("             Thank you for using TeamMate.");
     }
 
     private void showMain() {
-        System.out.println("\nMAIN MENU");
-        System.out.println("1. Load Participants from CSV (Standard)");
-        System.out.println("2. Load Participants from CSV (Concurrent)");
-        System.out.println("3. Display Participant Statistics");
-        System.out.println("4. Form Teams");
-        System.out.println("5. Display Formed Teams");
-        System.out.println("6. Export Teams to CSV");
-        System.out.println("7. Analyze Team Balance");
-        System.out.println("8. Add New Participant (Questionnaire)");
-        System.out.println("0. Exit");
-        System.out.print("Your Choice: ");
+        System.out.println("\n" + "=".repeat(55));
+        System.out.println("                      MAIN MENU");
+        System.out.println("=".repeat(55));
+        System.out.println("            1 - Load Participants (Standard)");
+        System.out.println("            2 - Load Participants (Concurrent)");
+        System.out.println("            3 - Display Participant Statistics");
+        System.out.println("            4 - Form Teams");
+        System.out.println("            5 - Display Formed Teams");
+        System.out.println("            6 - Export Teams");
+        System.out.println("            7 - Analyze Team Balance");
+        System.out.println("            8 - Add New Participant");
+        System.out.println("            0 - Exit");
+        System.out.print("\n            Enter Your Choice: ");
     }
 }

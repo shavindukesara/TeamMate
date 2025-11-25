@@ -13,25 +13,31 @@ public class AuthController {
         this.scanner = scanner;
         this.authService = new AuthService();
     }
+
     public boolean launchAuthFlow() {
         while (true) {
-            System.out.println("\n" + "=".repeat(70));
+            System.out.println("\n" + "=".repeat(55));
             System.out.println("           TEAMMATE - TEAM FORMATION SYSTEM");
-            System.out.println("              University Gaming Club");
-            System.out.println("=".repeat(70));
-            System.out.println("\nAuthentication:");
-            System.out.println("1) Login");
-            System.out.println("2) Register");
-            System.out.println("3) Continue as Guest");
-            System.out.print("Choose: ");
+            System.out.println("                University Gaming Club");
+            System.out.println("=".repeat(55));
+            System.out.println("\n                   Authentication");
+            System.out.println("\n            1 - Login as an existing user");
+            System.out.println("            2 - Register as a new user");
+            System.out.println("            3 - Continue as Guest");
+            System.out.println("\n" + "=".repeat(55));
+            System.out.print("            Your choice: ");
             String opt = scanner.nextLine().trim();
 
             switch (opt) {
                 case "1" -> {
                     try {
-                        if (login()) return true;
+                        boolean loginResult = login();
+                        if (loginResult) return true;
+                        return false;
                     } catch (Exception e) {
                         System.err.println("Login error: " + e.getMessage());
+                        System.out.println("Continuing as guest...");
+                        return false;
                     }
                 }
                 case "2" -> {
@@ -50,10 +56,11 @@ public class AuthController {
     }
 
     private boolean login() throws Exception {
-        System.out.print("Username: ");
+        System.out.println("\n" + "=".repeat(55));
+        System.out.print("            Enter Username: ");
         String u = scanner.nextLine().trim();
 
-        System.out.print("Password: ");
+        System.out.print("            Enter Password: ");
         String p = (System.console() != null)
                 ? new String(System.console().readPassword())
                 : scanner.nextLine();
@@ -61,40 +68,48 @@ public class AuthController {
         boolean ok = authService.login(u, p);
 
         if (!ok) {
-            System.out.println("\nUser not found or password incorrect.");
-            System.out.println("1) Try Again");
-            System.out.println("2) Continue as Guest");
-            System.out.print("Your choice: ");
+            System.out.println("=".repeat(55));
+            System.out.println("\n            User not found or password incorrect.");
+            System.out.println("            1 - Try Again");
+            System.out.println("            2 - Register as a new user");
+            System.out.println("            3 - Continue as Guest");
+            System.out.print("\n            Your choice: ");
             String choice = scanner.nextLine().trim();
 
             if ("1".equals(choice)) {
                 return login();
-            } else {
+            } else if ("2".equals(choice)) {
+                return registerAndLogin();
+            }
+            else {
                 return false;
             }
         }
 
         loggedInUser = u;
+        System.out.println("\n" + "=".repeat(55));
         System.out.println("Login successful.");
         return true;
     }
 
     private boolean registerAndLogin() throws Exception {
-        System.out.print("Enter a new username: ");
+        System.out.println("\n" + "=".repeat(55));
+        System.out.print("            Enter a new username: ");
         String u = scanner.nextLine().trim();
-        System.out.print("Enter a new password: ");
+        System.out.print("            Enter a new password: ");
         String p = System.console() != null ? new String(System.console().readPassword()) : scanner.nextLine();
 
         boolean created = authService.register(u, p);
         if (!created) {
-            System.out.println("Registration failed (username may already exist or input invalid).");
-            return false;
+            System.out.println("\n" + "=".repeat(55));
+            System.out.println("                 Registration failed. \n     Username may already exist or input invalid.");
+            return registerAndLogin();
         }
 
-        System.out.println("Registered successfully. Please login with your new credentials.");
+        System.out.println("\n" + "=".repeat(55));
+        System.out.println("               Registered successfully. \n        Please login with your new credentials.");
         return login();
     }
-
 
     public String getLoggedInUser() {
         return loggedInUser;

@@ -104,11 +104,13 @@ public class MatchingAlgorithm {
         }
 
         if (!leftovers.isEmpty()) {
-            System.out.println("\nThere are " + leftovers.size() + " remaining participants after forming valid teams.");
-            System.out.println("What would you like to do with them?");
-            System.out.println("1) Create additional teams from remaining participants (may be unbalanced) - WARNING");
-            System.out.println("2) Do NOT create additional teams (remaining participants will be left unteamed)");
-            System.out.print("Choose: ");
+            System.out.println("\n" + "=".repeat(55));
+            System.out.println("\n            There are " + leftovers.size() + " remaining participants \n            after forming valid teams.");
+            System.out.println("            What would you like to do with them?");
+            System.out.println("\n            1 - Create additional teams from remaining participants (may be unbalanced) - WARNING");
+            System.out.println("            2 - Do NOT create additional teams (remaining participants will be left unteamed)");
+            System.out.println("\n" + "=".repeat(55));
+            System.out.print("            Your Choice: ");
             String choice = SCANNER.nextLine().trim();
             if ("1".equals(choice)) {
                 List<Team> extra = createExtraTeamsFromLeftovers(leftovers, teamSize, teams.size(), random);
@@ -116,7 +118,7 @@ public class MatchingAlgorithm {
                 if (!extra.isEmpty()) LOGGER.warning("Created " + extra.size() + " extra team(s) from leftovers (may be unbalanced)");
                 leftovers.clear();
             } else {
-                LOGGER.info("User chose not to create extra teams for leftover participants");
+                LOGGER.info("           User chose not to create extra teams for leftover participants");
             }
         }
 
