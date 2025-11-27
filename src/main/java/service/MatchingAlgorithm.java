@@ -12,12 +12,18 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.logging.Logger;
 
-public class MatchingAlgorithm {
+public class MatchingAlgorithm implements TeamFormationStrategy {
     private static final Logger LOGGER = Logger.getLogger(MatchingAlgorithm.class.getName());
     private static final int MAX_SAME_GAME = 2;
     private static final int MIN_ROLES = 3;
     private static final Scanner SCANNER = new Scanner(System.in);
     private static final long DETERMINISTIC_SEED = 42L;
+
+    @Override
+    public List<Team> formTeams(List<Participant> participants, int teamSize, boolean randomMode)
+            throws TeamFormationException {
+        return matchParticipants(participants, teamSize, randomMode);
+    }
 
     public static List<Team> matchParticipants(List<Participant> participants, int teamSize)
             throws TeamFormationException {
