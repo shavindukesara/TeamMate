@@ -68,13 +68,11 @@ public class Participant {
     }
 
     @Override
-    public int hashCode() {
-        return Objects.hash(id);
-    }
+    public int hashCode() { return Objects.hash(id); }
 
     @Override
     public String toString() {
-        return String.format("Participant{id='%s', name='%s', game='%s', skill='%s', role='%s', type='%s'}",
+        return String.format("Participant{id='%s', name='%s', game='%s', skill=%d, role=%s, type=%s}",
                 id, name, preferredGame, skillLevel, preferredRole, personalityType);
     }
 }

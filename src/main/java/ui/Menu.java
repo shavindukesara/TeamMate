@@ -33,8 +33,9 @@ public class Menu {
                 default -> System.out.println("Invalid choice.");
             }
         }
-        System.out.println("=".repeat(55));
+        System.out.println("\n" + "=".repeat(55));
         System.out.println("             Thank you for using TeamMate.");
+        System.out.println("=".repeat(55));
     }
 
     private void showMain() {

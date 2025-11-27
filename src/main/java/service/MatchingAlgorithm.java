@@ -118,7 +118,7 @@ public class MatchingAlgorithm {
                 if (!extra.isEmpty()) LOGGER.warning("Created " + extra.size() + " extra team(s) from leftovers (may be unbalanced)");
                 leftovers.clear();
             } else {
-                LOGGER.info("           User chose not to create extra teams for leftover participants");
+                LOGGER.info("User chose not to create extra teams for leftover participants");
             }
         }
 
