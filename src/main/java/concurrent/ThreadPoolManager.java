@@ -7,19 +7,13 @@ import java.util.logging.Logger;
 public class ThreadPoolManager {
     private static final Logger LOGGER = Logger.getLogger(ThreadPoolManager.class.getName());
     private final ExecutorService executorService;
-    private final int threadPoolSize;
 
     public ThreadPoolManager() {
-        this.threadPoolSize = Runtime.getRuntime().availableProcessors();
+        int threadPoolSize = Runtime.getRuntime().availableProcessors();
         this.executorService = Executors.newFixedThreadPool(threadPoolSize);
         LOGGER.info("ThreadPool initialized with " + threadPoolSize + " threads");
     }
 
-    public ThreadPoolManager(int customSize) {
-        this.threadPoolSize = customSize;
-        this.executorService = Executors.newFixedThreadPool(threadPoolSize);
-        LOGGER.info("ThreadPool initialized with " + threadPoolSize + " threads");
-    }
     public <T> List<T> executeTasksAndCollect(List<Callable<List<T>>> tasks)
         throws InterruptedException, ExecutionException {
         List<Future<List<T>>> futures = new ArrayList<>();
@@ -44,8 +38,5 @@ public class ThreadPoolManager {
             Thread.currentThread().interrupt();
         }
         LOGGER.info("ThreadPool shutdown completed");
-    }
-    public int getThreadPoolSize() {
-        return threadPoolSize;
     }
 }

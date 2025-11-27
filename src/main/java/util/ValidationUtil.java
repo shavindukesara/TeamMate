@@ -1,7 +1,5 @@
 package util;
 
-import model.Role;
-
 import java.util.regex.Pattern;
 
 public class ValidationUtil {
@@ -22,14 +20,6 @@ public class ValidationUtil {
         return score >= 0 && score <= 100;
     }
 
-    public static boolean validateRole(String role) {
-        try {
-            Role.fromString(role);
-            return true;
-        } catch (IllegalArgumentException e) {
-            return false;
-        }
-    }
 
     public static boolean validateGame(String game) {
         for (String validGame : VALID_GAMES) {
@@ -38,9 +28,5 @@ public class ValidationUtil {
             }
         }
         return false;
-    }
-
-    public static boolean validateTeamSize(int size, int totalparticipants) {
-        return size >= 1 && size <= 10 && totalparticipants >= size * 2;
     }
 }

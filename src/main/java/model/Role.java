@@ -4,7 +4,7 @@ public enum Role {
     STRATEGIST("Strategist"),
     ATTACKER("Attacker"),
     DEFENDER("Defender"),
-    SUPPORTER("Suppoter"),
+    SUPPORTER("Supporter"),
     COORDINATOR("Coordinator");
 
     private final String displayName;
@@ -12,7 +12,6 @@ public enum Role {
     Role(String displayName) {
         this.displayName = displayName;
     }
-    public String getDisplayName() { return displayName; }
 
     public static Role fromString(String role) {
         for (Role r : values()) {

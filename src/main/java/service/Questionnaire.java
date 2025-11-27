@@ -19,10 +19,10 @@ public class Questionnaire {
     public int runSurveyAndGetScaledScore(Scanner scanner) {
         System.out.println("\nPlease rate each statement from 1 (Strongly Disagree) to 5 (Strongly Agree).");
         int total = 0;
-        for (int i = 0; i < QUESTIONS.size(); i++) {
+        for (String question : QUESTIONS) {
             int ans = 0;
             while (ans < 1 || ans > 5) {
-                System.out.println(QUESTIONS.get(i));
+                System.out.println(question);
                 System.out.print("Your answer (1-5): ");
                 String line = scanner.nextLine().trim();
                 try {

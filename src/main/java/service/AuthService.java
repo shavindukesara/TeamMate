@@ -50,7 +50,7 @@ public class AuthService {
     private Map<String, String> loadAll() throws IOException {
         Map<String, String> map = new HashMap<>();
         try (BufferedReader br = Files.newBufferedReader(USERS_FILE)) {
-            br.readLine(); // skip header
+            br.readLine();
             String line;
             while ((line = br.readLine()) != null) {
                 String[] parts = line.split(",", 2);

@@ -1,0 +1,13 @@
+TeamID,TeamName,ParticipantID,ParticipantName,Email,PreferredGame,SkillLevel,Role,PersonalityType
+T3,Team 3,90a72b58-8ff9-41fb-97c1-25dc41ff2040,Leader_15,leader15@example.com,Chess,7,DEFENDER,LEADER
+T3,Team 3,88bab159-2575-4fa3-9266-23cdf0f081cc,Thinker_12_1,thinker12_1@example.com,Valorant,6,ATTACKER,THINKER
+T3,Team 3,93b99353-b05a-426f-ab0f-d24b54c83b2d,Thinker_15_1,thinker15_1@example.com,FIFA,6,SUPPORTER,THINKER
+T4,Team 4,eca02e0e-68bf-4ccb-b115-496902e224b2,Leader_6,leader6@example.com,Valorant,7,STRATEGIST,LEADER
+T4,Team 4,e822e157-5340-4f30-bb4c-9e9a26dd5622,Thinker_18_1,thinker18_1@example.com,DOTA 2,6,ATTACKER,THINKER
+T4,Team 4,5ba7375f-a49d-4f95-b8db-3e4b35d9612c,Thinker_7_1,thinker7_1@example.com,Chess,6,DEFENDER,THINKER
+T5,Team 5,6e03d39c-8531-4c4f-bb1c-30d860688852,Leader_16,leader16@example.com,FIFA,7,STRATEGIST,LEADER
+T5,Team 5,56ea2a20-c0a2-4c4e-96e0-16e28c8abeb5,Thinker_14_1,thinker14_1@example.com,Chess,6,DEFENDER,THINKER
+T5,Team 5,cb755657-af04-4de3-9c0e-39ceb1f0f0bc,Thinker_14_2,thinker14_2@example.com,FIFA,6,SUPPORTER,THINKER
+T12,Team 12,1c7c2ddc-40a9-4c0b-aea8-3de8ca89f9d6,Leader_12,leader12@example.com,DOTA 2,8,SUPPORTER,LEADER
+T12,Team 12,453cc404-d24c-4963-b9a1-c06251b7367e,Member_6_4,member6_4@example.com,CS:GO,4,STRATEGIST,BALANCED
+T12,Team 12,142fdd1c-5565-4d8d-9868-385bf15a9795,Member_4_5,member4_5@example.com,Basketball,7,DEFENDER,BALANCED

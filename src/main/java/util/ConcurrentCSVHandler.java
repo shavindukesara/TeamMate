@@ -2,7 +2,6 @@ package util;
 
 import model.Participant;
 import concurrent.*;
-import exception.InvalidDataException;
 import java.io.*;
 import java.util.*;
 import java.util.concurrent.*;

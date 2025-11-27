@@ -1,7 +1,6 @@
 package model;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 public class Team {
     private final String teamId;
@@ -36,21 +35,6 @@ public class Team {
                 .orElse(0.0);
     }
 
-    public Map<String, Integer> getGameDistribution() {
-        return members.stream()
-                .collect(Collectors.groupingBy(
-                        Participant::getPreferredGame,
-                        Collectors.summingInt(p -> 1)
-                ));
-    }
-
-    public Map<PersonalityType, Integer> getPersonalityDistribution() {
-        return members.stream()
-                .collect(Collectors.groupingBy(
-                        Participant::getPersonalityType,
-                        Collectors.summingInt(p -> 1)
-                ));
-    }
 
     public int getUniqueRoleCount() {
         return (int) members.stream()
@@ -65,37 +49,10 @@ public class Team {
                 .count();
     }
 
-    public int countByPersonalityType(PersonalityType type) {
-        return (int) members.stream()
-                .filter(p -> p.getPersonalityType() == type)
-                .count();
-    }
-
     public boolean isFull() {
         return members.size() == maxSize;
     }
 
-    public boolean isBalanced() {
-        return checkGameDiversity() && checkRoleDiversity() && checkPersonalityMix();
-    }
-
-    private boolean checkGameDiversity() {
-        Map<String, Integer> gameDist = getGameDistribution();
-        return gameDist.values().stream().allMatch(count -> count <= 2);
-    }
-    private boolean checkRoleDiversity() {
-        return getUniqueRoleCount() >= 3;
-    }
-
-    private boolean checkPersonalityMix() {
-        int leaders = countByPersonalityType(PersonalityType.LEADER);
-        int thinkers = countByPersonalityType(PersonalityType.THINKER);
-
-        if (leaders != 1) return false;
-        if (thinkers < 1 || thinkers > 2) return false;
-
-        return true;
-    }
 
     public String getTeamId() { return teamId; }
     public String getTeamName() { return teamName; }

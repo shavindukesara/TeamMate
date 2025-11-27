@@ -16,7 +16,7 @@ public class Menu {
     public void start() {
         while (true) {
             AuthController auth = new AuthController(scanner);
-            boolean authenticated = auth.launchAuthFlow();   // login/register/guest
+            boolean authenticated = auth.launchAuthFlow();
             String user = auth.getLoggedInUser();
 
             if (authenticated) {
@@ -44,12 +44,13 @@ public class Menu {
                         System.out.println("\n             Logging out...");
                         inMainMenu = false;
                     }
+                    case "10" -> participants.reshuffleAndAutoFix();
                     case "0" -> {
                         System.out.println("\n" + "=".repeat(55));
                         System.out.println("             Thank you for using TeamMate.");
                         return;
                     }
-                    default -> System.out.println("             Invalid choice. Please enter 0–9.");
+                    default -> System.out.println("             Invalid choice. Please enter 0–10.");
                 }
             }
         }
@@ -68,6 +69,7 @@ public class Menu {
         System.out.println("            7 - Export Teams");
         System.out.println("            8 - Analyze Team Balance");
         System.out.println("            9 - Logout");
+        System.out.println("            10 - Reshuffle & Auto-fix (one option)");
         System.out.println("            0 - Exit");
         System.out.print("\n            Enter Your Choice: ");
     }

@@ -2,7 +2,6 @@ package service;
 
 import model.*;
 import exception.TeamFormationException;
-
 import java.io.FileWriter;
 import java.io.PrintWriter;
 import java.nio.file.Files;
@@ -16,18 +15,15 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
     private static final Logger LOGGER = Logger.getLogger(MatchingAlgorithm.class.getName());
     private static final int MAX_SAME_GAME = 2;
     private static final int MIN_ROLES = 3;
-    private static final Scanner SCANNER = new Scanner(System.in);
     private static final long DETERMINISTIC_SEED = 42L;
+
+
+    public static final double SPREAD_THRESHOLD_FRAC = 0.15;
 
     @Override
     public List<Team> formTeams(List<Participant> participants, int teamSize, boolean randomMode)
             throws TeamFormationException {
         return matchParticipants(participants, teamSize, randomMode);
-    }
-
-    public static List<Team> matchParticipants(List<Participant> participants, int teamSize)
-            throws TeamFormationException {
-        return matchParticipants(participants, teamSize, true);
     }
 
     public static List<Team> matchParticipants(List<Participant> participants, int teamSize, boolean randomMode)
@@ -96,39 +92,51 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
 
         TeamRebalancer.rebalance(teams);
 
+        double globalAvg = teams.stream().mapToDouble(Team::calculateAverageSkill).average().orElse(globalAvgSkill);
+        double maxAvg = teams.stream().mapToDouble(Team::calculateAverageSkill).max().orElse(globalAvg);
+        double minAvg = teams.stream().mapToDouble(Team::calculateAverageSkill).min().orElse(globalAvg);
+        double spread = maxAvg - minAvg;
+
+        if (globalAvg > 0 && spread > globalAvg * SPREAD_THRESHOLD_FRAC) {
+            LOGGER.info(String.format("Spread %.3f exceeds threshold %.3f (globalAvg %.3f). Trying aggressive rebalancer.",
+                    spread, globalAvg * SPREAD_THRESHOLD_FRAC, globalAvg));
+            TeamRebalancer.rebalance(teams, 200, 2000); // aggressive attempt
+            globalAvg = teams.stream().mapToDouble(Team::calculateAverageSkill).average().orElse(globalAvgSkill);
+            maxAvg = teams.stream().mapToDouble(Team::calculateAverageSkill).max().orElse(globalAvg);
+            minAvg = teams.stream().mapToDouble(Team::calculateAverageSkill).min().orElse(globalAvg);
+            spread = maxAvg - minAvg;
+        }
+
         List<Team> violating = new ArrayList<>();
         for (Team t : teams) {
             if (teamViolates(t)) violating.add(t);
         }
 
-        if (!violating.isEmpty()) {
-            for (Team vt : violating) {
-                for (Participant p : vt.getMembers()) leftovers.add(p);
+        if (!violating.isEmpty() || (globalAvg > 0 && spread > globalAvg * SPREAD_THRESHOLD_FRAC)) {
+            List<Team> toRemove = new ArrayList<>(violating);
+            if (toRemove.isEmpty() && globalAvg > 0) {
+                for (Team t : new ArrayList<>(teams)) {
+                    double dev = Math.abs(t.calculateAverageSkill() - globalAvg);
+                    if (dev > globalAvg * SPREAD_THRESHOLD_FRAC) toRemove.add(t);
+                }
             }
-            teams.removeAll(violating);
-            LOGGER.info("Removed " + violating.size() + " unstable team(s) and moved their members to leftovers");
-        }
 
-        if (!leftovers.isEmpty()) {
-            System.out.println("\n" + "=".repeat(55));
-            System.out.println("\n            There are " + leftovers.size() + " remaining participants \n            after forming valid teams.");
-            System.out.println("            What would you like to do with them?");
-            System.out.println("\n            1 - Create additional teams from remaining participants (may be unbalanced) - WARNING");
-            System.out.println("            2 - Do NOT create additional teams (remaining participants will be left unteamed)");
-            System.out.println("\n" + "=".repeat(55));
-            System.out.print("            Your Choice: ");
-            String choice = SCANNER.nextLine().trim();
-            if ("1".equals(choice)) {
-                List<Team> extra = createExtraTeamsFromLeftovers(leftovers, teamSize, teams.size(), random);
-                teams.addAll(extra);
-                if (!extra.isEmpty()) LOGGER.warning("Created " + extra.size() + " extra team(s) from leftovers (may be unbalanced)");
-                leftovers.clear();
-            } else {
-                LOGGER.info("User chose not to create extra teams for leftover participants");
+            if (!toRemove.isEmpty()) {
+                for (Team vt : toRemove) {
+                    for (Participant p : vt.getMembers()) leftovers.add(p);
+                }
+                teams.removeAll(toRemove);
+                LOGGER.info("Removed " + toRemove.size() + " unstable team(s) and moved their members to leftovers due to excessive spread/violations.");
             }
+            writeLeftoversCsv(leftovers);
+            System.out.println("\n" + "=".repeat(55));
+            System.out.println("            NOTICE: Some teams were unstable or overall spread was too large.");
+            System.out.println("            Unstable teams' members were moved to data/leftovers.csv.");
+            System.out.println("            You may inspect leftovers, adjust data or reshuffle again.");
+            System.out.println("".repeat(55));
+        } else {
+            writeLeftoversCsv(leftovers);
         }
-
-        writeLeftoversCsv(leftovers);
 
         validateTeams(teams);
 
@@ -324,6 +332,9 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
         }
         return false;
     }
+    public static double getSpreadThresholdFrac() {
+        return SPREAD_THRESHOLD_FRAC;
+    }
 
     private static Participant pollAnyFromQueues(Queue<Participant> a, Queue<Participant> b, Queue<Participant> c) {
         Participant p = pollAnyFromQueue(a);
@@ -454,6 +465,10 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
         if (t.getUniqueRoleCount() < MIN_ROLES) return true;
         if (!satisfiesPersonalityRule(t)) return true;
         return false;
+    }
+
+    public static boolean teamViolatesPublic(Team t) {
+        return teamViolates(t);
     }
 
     private static boolean satisfiesPersonalityRule(Team t) {

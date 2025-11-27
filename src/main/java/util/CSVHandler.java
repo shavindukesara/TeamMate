@@ -5,7 +5,6 @@ import model.Role;
 import model.Team;
 import model.PersonalityType;
 import exception.InvalidDataException;
-
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.FileWriter;
