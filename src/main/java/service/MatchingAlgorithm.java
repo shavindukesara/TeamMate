@@ -17,7 +17,6 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
     private static final int MIN_ROLES = 3;
     private static final long DETERMINISTIC_SEED = 42L;
 
-
     public static final double SPREAD_THRESHOLD_FRAC = 0.15;
 
     @Override
@@ -100,7 +99,7 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
         if (globalAvg > 0 && spread > globalAvg * SPREAD_THRESHOLD_FRAC) {
             LOGGER.info(String.format("Spread %.3f exceeds threshold %.3f (globalAvg %.3f). Trying aggressive rebalancer.",
                     spread, globalAvg * SPREAD_THRESHOLD_FRAC, globalAvg));
-            TeamRebalancer.rebalance(teams, 200, 2000); // aggressive attempt
+            TeamRebalancer.rebalance(teams, 200, 2000);
             globalAvg = teams.stream().mapToDouble(Team::calculateAverageSkill).average().orElse(globalAvgSkill);
             maxAvg = teams.stream().mapToDouble(Team::calculateAverageSkill).max().orElse(globalAvg);
             minAvg = teams.stream().mapToDouble(Team::calculateAverageSkill).min().orElse(globalAvg);
@@ -133,7 +132,7 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
             System.out.println("            NOTICE: Some teams were unstable or overall spread was too large.");
             System.out.println("            Unstable teams' members were moved to data/leftovers.csv.");
             System.out.println("            You may inspect leftovers, adjust data or reshuffle again.");
-            System.out.println("".repeat(55));
+            System.out.println("=".repeat(55));
         } else {
             writeLeftoversCsv(leftovers);
         }
@@ -332,6 +331,7 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
         }
         return false;
     }
+
     public static double getSpreadThresholdFrac() {
         return SPREAD_THRESHOLD_FRAC;
     }
@@ -379,25 +379,6 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
             queues.put(e.getKey(), new ConcurrentLinkedQueue<>(e.getValue()));
         }
         return queues;
-    }
-
-    private static List<Team> createExtraTeamsFromLeftovers(List<Participant> leftovers, int teamSize, int existingCount, Random random) {
-        List<Team> extras = new ArrayList<>();
-        Collections.shuffle(leftovers, random);
-        int index = 0;
-        int teamCounter = existingCount;
-        while (index < leftovers.size()) {
-            int remaining = leftovers.size() - index;
-            int currentSize = Math.min(teamSize, remaining);
-            Team t = new Team("XT" + (++teamCounter), "Extra Team " + teamCounter, currentSize);
-            for (int i = 0; i < currentSize; i++) {
-                Participant p = leftovers.get(index++);
-                t.addMember(p);
-            }
-            extras.add(t);
-            if (currentSize < teamSize) LOGGER.warning(t.getTeamId() + " created with size " + currentSize + " (smaller than desired team size)");
-        }
-        return extras;
     }
 
     private static void drainQueueToList(Queue<Participant> q, List<Participant> out) {
