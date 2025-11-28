@@ -166,7 +166,6 @@ public class AdminController {
         }
     }
 
-    // NEW METHOD: View specific team by ID
     public void viewTeamById(String teamId) {
         if (formedTeams == null || formedTeams.isEmpty()) {
             System.out.println("            No teams formed.");
@@ -196,7 +195,6 @@ public class AdminController {
         }
     }
 
-    // NEW METHOD: Find team by participant ID
     public void findTeamByParticipant(String participantId) {
         if (formedTeams == null || formedTeams.isEmpty()) {
             System.out.println("            No teams formed.");

@@ -5,19 +5,13 @@ import model.Role;
 import repository.ParticipantRepository;
 import service.Questionnaire;
 import service.TeamFormationStrategy;
-
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 
-/**
- * Participant auth controller:
- * - Login: checks data/participant_accounts.csv (username,password,participantId)
- * - Register: prompts details, runs questionnaire, generates Pxxx id, appends record to participants_sample.csv and account to participant_accounts.csv
- * - Returns a ParticipantController attached to the logged-in participant (or null on back/cancel)
- */
+
 public class ParticipantAuthController {
     private final Scanner scanner;
     private final ParticipantRepository repository;
@@ -39,10 +33,6 @@ public class ParticipantAuthController {
         }
     }
 
-    /**
-     * Launch participant authentication session and return a ParticipantController with the logged participant.
-     * Returns null if user chooses Back.
-     */
     public ParticipantController launchParticipantSession() {
         while (true) {
             System.out.println("\n" + "=".repeat(55));
@@ -139,7 +129,6 @@ public class ParticipantAuthController {
 
             Participant p = new Participant(newId, name, email, game, skill, role, scaled);
 
-            // append participant (try repository append)
             boolean appended = false;
             try {
                 appended = repository.append(p, PARTICIPANTS_CSV.toString());
@@ -254,7 +243,6 @@ public class ParticipantAuthController {
         return String.format("P%03d", max + 1);
     }
 
-    // lightweight CSV helpers
     private static String[] parseCsvLine(String line) {
         if (line == null) return new String[0];
         List<String> fields = new ArrayList<>();

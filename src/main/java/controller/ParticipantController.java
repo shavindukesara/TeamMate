@@ -28,18 +28,14 @@ public class ParticipantController {
         this.strategy = strategy;
         this.loggedParticipant = loggedParticipant;
 
-        // Automatically load teams when participant logs in
         System.out.println("\n            Checking for existing teams...");
         loadFormedTeams();
     }
 
-    /**
-     * Load formed teams from CSV file automatically
-     */
+
     private void loadFormedTeams() {
         String teamsFilePath = "data/formed_teams.csv";
 
-        // Debug: Check if file exists
         File teamsFile = new File(teamsFilePath);
         System.out.println("            Debug: Teams file path: " + teamsFile.getAbsolutePath());
         System.out.println("            Debug: File exists? " + teamsFile.exists());
@@ -53,20 +49,19 @@ public class ParticipantController {
         try {
             formedTeams = CSVHandler.loadTeamsFromCSV(teamsFilePath);
 
-            // Debug output
+
             System.out.println("            Debug: Loaded " + formedTeams.size() + " teams from file.");
 
             if (!formedTeams.isEmpty()) {
                 System.out.println("            ✓ Found " + formedTeams.size() + " teams in the system.");
 
-                // Debug: Show team IDs
                 System.out.print("            Debug: Team IDs: ");
                 for (Team t : formedTeams) {
                     System.out.print(t.getTeamId() + " ");
                 }
                 System.out.println();
 
-                // Check if participant is in any team
+
                 boolean found = false;
                 for (Team t : formedTeams) {
                     for (Participant p : t.getMembers()) {
@@ -97,9 +92,6 @@ public class ParticipantController {
         }
     }
 
-    /**
-     * Reload teams from CSV (in case admin updated them)
-     */
     public void refreshTeams() {
         System.out.println("\n" + "=".repeat(55));
         System.out.println("            REFRESHING TEAMS FROM SYSTEM");
@@ -203,7 +195,7 @@ public class ParticipantController {
         System.out.println("            MY TEAM");
         System.out.println("=".repeat(55));
 
-        // Debug output
+
         System.out.println("            Debug: Logged participant ID: " + loggedParticipant.getId());
         System.out.println("            Debug: formedTeams list size = " + formedTeams.size());
 
@@ -214,7 +206,6 @@ public class ParticipantController {
             return;
         }
 
-        // Find the team containing this participant
         Team myTeam = null;
         for (Team t : formedTeams) {
             System.out.println("            Debug: Checking team " + t.getTeamId() + " with " + t.getCurrentSize() + " members");
@@ -237,7 +228,6 @@ public class ParticipantController {
             return;
         }
 
-        // Display team information
         System.out.println();
         System.out.printf("            Team Name:    %s%n", myTeam.getTeamName());
         System.out.printf("            Team ID:      %s%n", myTeam.getTeamId());
@@ -260,10 +250,5 @@ public class ParticipantController {
         }
 
         System.out.println("=".repeat(55));
-    }
-
-    private String promptInput(String message) {
-        System.out.print(message);
-        return scanner.nextLine().trim();
     }
 }
