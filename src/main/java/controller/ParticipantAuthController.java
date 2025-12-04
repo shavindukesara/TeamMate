@@ -12,8 +12,7 @@ import java.nio.file.Paths;
 import java.util.*;
 
 
-public class ParticipantAuthController {
-    private final Scanner scanner;
+public class ParticipantAuthController extends BaseController {
     private final ParticipantRepository repository;
     private final TeamFormationStrategy strategy;
     private final Questionnaire questionnaire = new Questionnaire();
@@ -22,7 +21,7 @@ public class ParticipantAuthController {
     private static final Path PARTICIPANTS_CSV = Paths.get("data", "participants_sample.csv");
 
     public ParticipantAuthController(Scanner scanner, ParticipantRepository repository, TeamFormationStrategy strategy) {
-        this.scanner = scanner;
+        super(scanner);  // Use parent constructor
         this.repository = repository;
         this.strategy = strategy;
         try { Files.createDirectories(ACCOUNTS.getParent()); } catch (IOException ignored) {}
@@ -36,12 +35,12 @@ public class ParticipantAuthController {
     public ParticipantController launchParticipantSession() {
         while (true) {
             System.out.println("\n" + "=".repeat(55));
-            System.out.println("            PARTICIPANT AUTH");
+            System.out.println("PARTICIPANT AUTH");
             System.out.println("=".repeat(55));
-            System.out.println("  1 - Login");
-            System.out.println("  2 - Register");
-            System.out.println("  3 - Back");
-            System.out.print("\n  Your choice: ");
+            System.out.println("1 - Login");
+            System.out.println("2 - Register");
+            System.out.println("3 - Back");
+            System.out.print("\nYour choice: ");
             String opt = scanner.nextLine().trim();
 
             switch (opt) {
@@ -62,13 +61,13 @@ public class ParticipantAuthController {
     }
 
     private Participant loginParticipant() {
-        System.out.print(" Username: ");
+        System.out.print("Username: ");
         String username = scanner.nextLine().trim();
-        System.out.print(" Password: ");
+        System.out.print("Password: ");
         String password = (System.console() != null) ? new String(System.console().readPassword()) : scanner.nextLine();
 
         try (BufferedReader br = new BufferedReader(new FileReader(ACCOUNTS.toFile()))) {
-            br.readLine(); // skip header
+            br.readLine();
             String line;
             while ((line = br.readLine()) != null) {
                 String[] f = parseCsvLine(line);
@@ -77,12 +76,10 @@ public class ParticipantAuthController {
                 String filePass = unquote(f[1]);
                 String pid = unquote(f[2]);
                 if (fileUser.equals(username) && filePass.equals(password)) {
-                    // load participant (try repository first)
                     try {
                         var all = repository.load(PARTICIPANTS_CSV.toString());
                         for (Participant p : all) if (p.getId().equals(pid)) return p;
                     } catch (Exception ignored) {}
-                    // fallback to csv parse
                     return findParticipantById(pid);
                 }
             }
@@ -96,30 +93,30 @@ public class ParticipantAuthController {
 
     private Participant registerParticipant() {
         try {
-            System.out.print(" Choose username: ");
+            System.out.print("Choose username: ");
             String username = scanner.nextLine().trim();
             if (username.isEmpty()) { System.out.println("Username required."); return null; }
             if (accountExists(username)) { System.out.println("Username already taken."); return null; }
 
-            System.out.print(" Choose password: ");
+            System.out.print("Choose password: ");
             String password = (System.console() != null) ? new String(System.console().readPassword()) : scanner.nextLine();
 
-            System.out.print(" Full name: ");
+            System.out.print("Full name: ");
             String name = scanner.nextLine().trim();
             if (name.isEmpty()) { System.out.println("Name required."); return null; }
 
-            System.out.print(" Email: ");
+            System.out.print("Email (eg: username@gmail.com): ");
             String email = scanner.nextLine().trim();
 
-            System.out.print(" Preferred game (CS:GO, Basketball, Valorant, Chess, DOTA 2, FIFA): ");
+            System.out.print("Preferred game (CS:GO, Basketball, Valorant, Chess, DOTA 2, FIFA): ");
             String game = scanner.nextLine().trim();
 
-            System.out.print(" Skill (1-10): ");
+            System.out.print("Skill (1-10): ");
             int skill;
             try { skill = Integer.parseInt(scanner.nextLine().trim()); }
             catch (NumberFormatException e) { System.out.println("Invalid skill."); return null; }
 
-            System.out.print(" Preferred role (Strategist, Attacker, Defender, Supporter, Coordinator): ");
+            System.out.print("Preferred role (Strategist, Attacker, Defender, Supporter, Coordinator): ");
             String roleStr = scanner.nextLine().trim();
             Role role;
             try { role = Role.fromString(roleStr); } catch (Exception e) { System.out.println("Invalid role."); return null; }
@@ -135,27 +132,23 @@ public class ParticipantAuthController {
             } catch (Exception ignored) {}
 
             if (!appended) {
-                // fallback raw append
                 if (!rawAppendParticipant(p)) {
-                    System.err.println("Failed to persist participant record.");
+                    System.err.println("Failed to record participant.");
                     return null;
                 }
             }
 
-            // persist account
             try (PrintWriter pw = new PrintWriter(new FileWriter(ACCOUNTS.toFile(), true))) {
                 pw.printf("%s,%s,%s%n", escapeCsv(username), escapeCsv(password), escapeCsv(p.getId()));
             }
 
-            System.out.println("Registered successfully (ID: " + p.getId() + "). Please login.");
+            System.out.println("Registered successfully (ID: " + p.getId() + ").");
             return p;
         } catch (Exception e) {
             System.err.println("Registration failed: " + e.getMessage());
             return null;
         }
     }
-
-    // Helpers
 
     private boolean accountExists(String username) {
         try (BufferedReader br = new BufferedReader(new FileReader(ACCOUNTS.toFile()))) {

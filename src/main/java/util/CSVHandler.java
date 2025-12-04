@@ -12,12 +12,10 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.logging.Logger;
-import java.util.Map;
 import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.logging.Logger;
 
 public class CSVHandler {
     private static final Logger LOGGER = Logger.getLogger(CSVHandler.class.getName());
@@ -72,10 +70,6 @@ public class CSVHandler {
         return participants;
     }
 
-    /**
-     * Load teams from CSV file
-     * Expected format: TeamID,TeamName,ParticipantID,ParticipantName,Email,PreferredGame,SkillLevel,Role,PersonalityType
-     */
     public static List<Team> loadTeamsFromCSV(String filePath) throws IOException {
         Map<String, Team> teamsMap = new LinkedHashMap<>();
 
@@ -97,15 +91,14 @@ public class CSVHandler {
             while ((line = br.readLine()) != null) {
                 lineNumber++;
                 if (line.trim().isEmpty()) {
-                    continue; // Skip empty lines
+                    continue;
                 }
 
                 try {
-                    // Use the proper CSV parser instead of simple split
                     String[] fields = parseCSVLine(line);
 
-                    if (fields.length < 9) {
-                        LOGGER.warning("Line " + lineNumber + ": Insufficient fields (found " + fields.length + ", expected 9)");
+                    if (fields.length < 8) {
+                        LOGGER.warning("Line " + lineNumber + ": Insufficient fields (found " + fields.length + ", expected at least 8)");
                         continue;
                     }
 
@@ -134,27 +127,40 @@ public class CSVHandler {
                         continue;
                     }
 
-                    // Parse personality score
-                    int personalityScore;
-                    try {
-                        personalityScore = Integer.parseInt(fields[8].trim());
-                    } catch (NumberFormatException e) {
-                        LOGGER.warning("Line " + lineNumber + ": Invalid personality score: " + fields[8]);
-                        continue;
+                    int personalityScore = 0;
+                    if (fields.length > 8 && !fields[8].trim().isEmpty()) {
+                        try {
+                            personalityScore = Integer.parseInt(fields[8].trim());
+                        } catch (NumberFormatException e) {
+                            LOGGER.warning("Line " + lineNumber + ": Invalid personality score: " + fields[8]);
+                            personalityScore = 0;
+                        }
                     }
 
-                    // Get or create team
+                    String ptypeStr = "";
+                    if (fields.length > 9) {
+                        ptypeStr = fields[9].trim();
+                    }
+
                     Team team = teamsMap.get(teamId);
                     if (team == null) {
-                        team = new Team(teamId, teamName, 10); // Default max size 10
+                        team = new Team(teamId, teamName, 10);
                         teamsMap.put(teamId, team);
                     }
 
-                    // Create and add participant
                     Participant participant = new Participant(
                             participantId, participantName, email, preferredGame,
                             skillLevel, role, personalityScore
                     );
+
+                    if (!ptypeStr.isEmpty()) {
+                        try {
+                            PersonalityType pType = PersonalityType.valueOf(ptypeStr.toUpperCase());
+                            participant.setPersonalityType(pType);
+                        } catch (IllegalArgumentException ignored) {
+                            LOGGER.fine("Line " + lineNumber + ": Unknown personality type: " + ptypeStr);
+                        }
+                    }
 
                     boolean added = team.addMember(participant);
                     if (!added) {
@@ -186,9 +192,6 @@ public class CSVHandler {
         return true;
     }
 
-    /**
-     * Properly parse CSV line handling quotes and escaped commas
-     */
     private static String[] parseCSVLine(String line) {
         List<String> fields = new ArrayList<>();
         StringBuilder sb = new StringBuilder();
@@ -197,7 +200,7 @@ public class CSVHandler {
         for (int i = 0; i < line.length(); i++) {
             char c = line.charAt(i);
             if (c == '"') {
-                // Handle escaped quotes ("")
+
                 if (inQuotes && i + 1 < line.length() && line.charAt(i + 1) == '"') {
                     sb.append('"');
                     i++;
@@ -217,7 +220,7 @@ public class CSVHandler {
 
     private static Participant parseFieldsToParticipant(String[] fields) throws InvalidDataException {
         if (fields.length < 7) {
-            throw new InvalidDataException("Insufficient fields in CSV line (expected at least 7)");
+            throw new InvalidDataException("Insufficient fields in CSV line");
         }
 
         try {
@@ -236,7 +239,7 @@ public class CSVHandler {
                     try {
                         pType = PersonalityType.valueOf(typeField.toUpperCase());
                     } catch (IllegalArgumentException ignored) {
-                        // Ignore invalid personality type
+
                     }
                 }
             }
@@ -247,7 +250,7 @@ public class CSVHandler {
                 try {
                     p.setPersonalityType(pType);
                 } catch (NoSuchMethodError | AbstractMethodError ignored) {
-                    // Method doesn't exist or can't be called
+
                 }
             }
 
@@ -273,8 +276,9 @@ public class CSVHandler {
             Files.createDirectories(parent);
         }
 
-        Set<String> existingIds = new HashSet<>();
-        Set<String> existingEmails = new HashSet<>();
+        boolean headerExists = Files.exists(file) && Files.size(file) > 0;
+
+        // Duplicate detection
         if (Files.exists(file)) {
             try (BufferedReader br = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
                 String header = br.readLine();
@@ -284,8 +288,14 @@ public class CSVHandler {
                     if (fields.length >= 3) {
                         String id = fields[0].trim();
                         String email = fields[2].trim().toLowerCase();
-                        if (!id.isEmpty()) existingIds.add(id);
-                        if (!email.isEmpty()) existingEmails.add(email);
+                        if (p.getId() != null && p.getId().equals(id)) {
+                            LOGGER.info("Duplicate participant detected by ID: " + p.getId());
+                            return false;
+                        }
+                        if (p.getEmail() != null && p.getEmail().equalsIgnoreCase(email)) {
+                            LOGGER.info("Duplicate participant detected by email: " + p.getEmail());
+                            return false;
+                        }
                     }
                 }
             } catch (IOException e) {
@@ -293,20 +303,10 @@ public class CSVHandler {
             }
         }
 
-        if (p.getId() != null && existingIds.contains(p.getId())) {
-            LOGGER.info("Duplicate participant detected by ID: " + p.getId());
-            return false;
-        }
-        if (p.getEmail() != null && existingEmails.contains(p.getEmail().toLowerCase())) {
-            LOGGER.info("Duplicate participant detected by email: " + p.getEmail());
-            return false;
-        }
-
-        boolean writeHeader = !Files.exists(file) || Files.size(file) == 0;
         try (BufferedWriter bw = Files.newBufferedWriter(file, StandardCharsets.UTF_8,
                 StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
 
-            if (writeHeader) {
+            if (!headerExists) {
                 bw.write(String.join(",", EXPECTED_HEADERS));
                 bw.newLine();
             }
@@ -332,17 +332,18 @@ public class CSVHandler {
         return true;
     }
 
+
     public static void saveTeams(List<Team> teams, String filePath) throws IOException {
         Path file = Paths.get(filePath);
         Path parent = file.getParent();
         if (parent != null) Files.createDirectories(parent);
 
         try (PrintWriter writer = new PrintWriter(new FileWriter(file.toFile(), false))) {
-            writer.println("TeamID,TeamName,ParticipantID,ParticipantName,Email,PreferredGame,SkillLevel,Role,PersonalityType");
+            writer.println("TeamID,TeamName,ParticipantID,ParticipantName,Email,PreferredGame,SkillLevel,Role,PersonalityScore,PersonalityType");
 
             for (Team team : teams) {
                 for (Participant member : team.getMembers()) {
-                    writer.printf("%s,%s,%s,%s,%s,%s,%d,%s,%s%n",
+                    writer.printf("%s,%s,%s,%s,%s,%s,%d,%s,%d,%s%n",
                             escapeCsv(team.getTeamId()),
                             escapeCsv(team.getTeamName()),
                             escapeCsv(member.getId()),
@@ -351,6 +352,7 @@ public class CSVHandler {
                             escapeCsv(member.getPreferredGame()),
                             member.getSkillLevel(),
                             escapeCsv(member.getPreferredRole() != null ? member.getPreferredRole().name() : ""),
+                            member.getPersonalityScore(),
                             escapeCsv(member.getPersonalityType() != null ? member.getPersonalityType().name() : "")
                     );
                 }
