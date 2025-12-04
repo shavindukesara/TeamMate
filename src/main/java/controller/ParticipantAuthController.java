@@ -108,8 +108,19 @@ public class ParticipantAuthController extends BaseController {
             System.out.print("Email (eg: username@gmail.com): ");
             String email = scanner.nextLine().trim();
 
+            while (!util.ValidationUtil.validateEmail(email)) {
+                System.out.print("Invalid email format.\nPlease enter a valid email (eg: username@gmail.com): ");
+                email = scanner.nextLine().trim();
+            }
+
             System.out.print("Preferred game (CS:GO, Basketball, Valorant, Chess, DOTA 2, FIFA): ");
             String game = scanner.nextLine().trim();
+
+            while (!util.ValidationUtil.validateGame(game)) {
+                System.out.print("Invalid game.\nPlease choose from (CS:GO, Basketball, Valorant, Chess, DOTA 2, FIFA): ");
+                game = scanner.nextLine().trim();
+            }
+            game = util.ValidationUtil.getValidGame(game);
 
             System.out.print("Skill (1-10): ");
             int skill;

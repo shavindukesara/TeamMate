@@ -218,7 +218,7 @@ public class ParticipantController extends BaseController {
 
         System.out.println();
         System.out.println("TEAM MEMBERS:");
-        System.out.println("" + "-".repeat(45));
+        System.out.println(" " + "-".repeat(45));
 
         for (Participant p : myTeam.getMembers()) {
             String highlight = p.getId().equals(loggedParticipant.getId()) ? " ← YOU" : "";
