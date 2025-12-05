@@ -13,51 +13,69 @@ import java.util.logging.Logger;
 
 public class MatchingAlgorithm implements TeamFormationStrategy {
     private static final Logger LOGGER = Logger.getLogger(MatchingAlgorithm.class.getName());
+    // Maximum number of participants with the same game in a team
     private static final int MAX_SAME_GAME = 2;
+    // Minimum number of unique roles required in a team
     private static final int MIN_ROLES = 3;
+    // Seed for deterministic random number generation
     private static final long DETERMINISTIC_SEED = 42L;
 
+    // Threshold fraction for skill spread calculation (15% of global average)
     public static final double SPREAD_THRESHOLD_FRAC = 0.15;
 
+    // Main method to form teams, implements TeamFormationStrategy interface
     @Override
     public List<Team> formTeams(List<Participant> participants, int teamSize, boolean randomMode)
             throws TeamFormationException {
         return matchParticipants(participants, teamSize, randomMode);
     }
 
+    // Core algorithm for matching participants into teams
     public static List<Team> matchParticipants(List<Participant> participants, int teamSize, boolean randomMode)
             throws TeamFormationException {
 
+        // Validate input parameters
         if (participants == null || participants.isEmpty()) throw new TeamFormationException("No participants provided");
         if (teamSize < 1) throw new TeamFormationException("Team size must be >= 1");
 
+        // Calculate number of teams based on participant count and team size
         int numTeams = participants.size() / teamSize;
         if (numTeams == 0) throw new TeamFormationException("Team size too large for participant count");
 
+        // Initialize random generator with either random or deterministic seed
         Random random = randomMode ? new Random() : new Random(DETERMINISTIC_SEED);
         LOGGER.info("Team formation randomness mode: " + (randomMode ? "RANDOM" : "DETERMINISTIC"));
 
+        // Calculate global average skill across all participants
         double globalAvgSkill = participants.stream().mapToInt(Participant::getSkillLevel).average().orElse(5.5);
 
+        // Group participants by personality type into queues
         Map<PersonalityType, Queue<Participant>> pools = groupByPersonalityQueues(participants, random);
 
+        // Get separate queues for each personality type
         Queue<Participant> leadersQ = pools.getOrDefault(PersonalityType.LEADER, new ConcurrentLinkedQueue<>());
         Queue<Participant> thinkersQ = pools.getOrDefault(PersonalityType.THINKER, new ConcurrentLinkedQueue<>());
         Queue<Participant> balancedQ = pools.getOrDefault(PersonalityType.BALANCED, new ConcurrentLinkedQueue<>());
 
+        // Queue for participants who couldn't be placed in any team
         ConcurrentLinkedQueue<Participant> globalLeftovers = new ConcurrentLinkedQueue<>();
 
+        // Set up thread pool for parallel team building
         int threads = Math.max(1, Runtime.getRuntime().availableProcessors());
         ExecutorService executor = Executors.newFixedThreadPool(threads);
 
+        // Create tasks for building each team in parallel
         List<Callable<Team>> tasks = new ArrayList<>();
         for (int i = 0; i < numTeams; i++) {
             final int teamIndex = i;
             tasks.add(() -> {
+                // Create new team with generated ID and name
                 Team team = new Team("T" + (teamIndex + 1), "Team " + (teamIndex + 1), teamSize);
                 List<Participant> reserved = new ArrayList<>();
+                // Attempt to build a valid team
                 boolean success = tryBuildValidTeam(team, teamSize, leadersQ, thinkersQ, balancedQ, reserved, random, globalAvgSkill);
                 if (!success) {
+                    // If team building fails, add reserved participants to leftovers
                     for (Participant p : reserved) globalLeftovers.add(p);
                     return null;
                 }
@@ -65,6 +83,7 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
             });
         }
 
+        // Execute team building tasks and collect results
         List<Team> teams = new ArrayList<>();
         try {
             List<Future<Team>> futures = executor.invokeAll(tasks);
@@ -83,36 +102,44 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
             executor.shutdown();
         }
 
+        // Collect any remaining participants from queues into leftovers
         List<Participant> leftovers = new ArrayList<>();
         drainQueueToList(leadersQ, leftovers);
         drainQueueToList(thinkersQ, leftovers);
         drainQueueToList(balancedQ, leftovers);
         drainQueueToList(globalLeftovers, leftovers);
 
+        // Perform initial rebalancing of teams
         TeamRebalancer.rebalance(teams);
 
+        // Calculate skill spread statistics
         double globalAvg = teams.stream().mapToDouble(Team::calculateAverageSkill).average().orElse(globalAvgSkill);
         double maxAvg = teams.stream().mapToDouble(Team::calculateAverageSkill).max().orElse(globalAvg);
         double minAvg = teams.stream().mapToDouble(Team::calculateAverageSkill).min().orElse(globalAvg);
         double spread = maxAvg - minAvg;
 
+        // If spread exceeds threshold, perform aggressive rebalancing
         if (globalAvg > 0 && spread > globalAvg * SPREAD_THRESHOLD_FRAC) {
             LOGGER.info(String.format("Spread %.3f exceeds threshold %.3f (globalAvg %.3f). Trying aggressive rebalancer.",
                     spread, globalAvg * SPREAD_THRESHOLD_FRAC, globalAvg));
             TeamRebalancer.rebalance(teams, 200, 2000);
+            // Recalculate statistics after rebalancing
             globalAvg = teams.stream().mapToDouble(Team::calculateAverageSkill).average().orElse(globalAvgSkill);
             maxAvg = teams.stream().mapToDouble(Team::calculateAverageSkill).max().orElse(globalAvg);
             minAvg = teams.stream().mapToDouble(Team::calculateAverageSkill).min().orElse(globalAvg);
             spread = maxAvg - minAvg;
         }
 
+        // Check for teams that violate constraints
         List<Team> violating = new ArrayList<>();
         for (Team t : teams) {
             if (teamViolates(t)) violating.add(t);
         }
 
+        // Handle unstable teams or excessive spread
         if (!violating.isEmpty() || (globalAvg > 0 && spread > globalAvg * SPREAD_THRESHOLD_FRAC)) {
             List<Team> toRemove = new ArrayList<>(violating);
+            // If no explicit violations but spread is high, find teams with high deviation
             if (toRemove.isEmpty() && globalAvg > 0) {
                 for (Team t : new ArrayList<>(teams)) {
                     double dev = Math.abs(t.calculateAverageSkill() - globalAvg);
@@ -120,6 +147,7 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
                 }
             }
 
+            // Remove problematic teams and move their members to leftovers
             if (!toRemove.isEmpty()) {
                 for (Team vt : toRemove) {
                     for (Participant p : vt.getMembers()) leftovers.add(p);
@@ -127,6 +155,7 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
                 teams.removeAll(toRemove);
                 LOGGER.info("Removed " + toRemove.size() + " unstable team(s) and moved their members to leftovers due to excessive spread/violations.");
             }
+            // Write leftovers to CSV file
             writeLeftoversCsv(leftovers);
             System.out.println("\n" + "=".repeat(55));
             System.out.println("            NOTICE: Some teams were unstable or overall spread was too large.");
@@ -134,14 +163,17 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
             System.out.println("            You may inspect leftovers, adjust data or reshuffle again.");
             System.out.println("=".repeat(55));
         } else {
+            // Write leftovers even if no problems (for any leftover participants)
             writeLeftoversCsv(leftovers);
         }
 
+        // Final validation of formed teams
         validateTeams(teams);
 
         return teams;
     }
 
+    // Attempts to build a valid team with given constraints
     private static boolean tryBuildValidTeam(Team team,
                                              int teamSize,
                                              Queue<Participant> leadersQ,
@@ -151,6 +183,7 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
                                              Random random,
                                              double globalAvgSkill) {
 
+        // Special handling for single-person teams
         if (teamSize == 1) {
             Participant leader = pollCandidateFromQueue(leadersQ, team, globalAvgSkill);
             if (leader != null) { team.addMember(leader); reserved.add(leader); return true; }
@@ -161,18 +194,22 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
             return false;
         }
 
+        // Handling for 2-person teams
         if (teamSize == 2) {
             Participant leader = pollCandidateFromQueue(leadersQ, team, globalAvgSkill);
             if (leader != null) {
                 team.addMember(leader); reserved.add(leader);
+                // Try to pair leader with thinker or balanced participant
                 Participant thinker = pollCandidateFromQueue(thinkersQ, team, globalAvgSkill);
                 if (thinker != null) { team.addMember(thinker); reserved.add(thinker); return true; }
                 Participant bal = pollCandidateFromQueue(balancedQ, team, globalAvgSkill);
                 if (bal != null) { team.addMember(bal); reserved.add(bal); return true; }
+                // Fallback: any thinker will do
                 Participant thinkerAny = pollAnyFromQueue(thinkersQ);
                 if (thinkerAny != null) { team.addMember(thinkerAny); reserved.add(thinkerAny); return true; }
                 return false;
             } else {
+                // Try thinker + balanced combination
                 Participant thinkerOnly = pollCandidateFromQueue(thinkersQ, team, globalAvgSkill);
                 if (thinkerOnly != null) {
                     team.addMember(thinkerOnly); reserved.add(thinkerOnly);
@@ -185,44 +222,57 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
             }
         }
 
+        // Handling for 3-person teams
         if (teamSize == 3) {
+            // Team must have exactly 1 leader
             Participant leader = pollCandidateFromQueue(leadersQ, team, globalAvgSkill);
             if (leader == null) return false;
             team.addMember(leader); reserved.add(leader);
 
+            // Try to add thinkers first
             int assignedThinkers = 0;
             for (int i = 0; i < 2 && !team.isFull(); i++) {
                 Participant t = pollCandidateFromQueue(thinkersQ, team, globalAvgSkill);
                 if (t != null) { team.addMember(t); reserved.add(t); assignedThinkers++; }
             }
 
+            // Fill remaining slots based on assigned thinkers count
             if (assignedThinkers == 2) {
+                // Team already has leader + 2 thinkers, which is valid
             } else if (assignedThinkers == 1) {
+                // Add one balanced participant
                 Participant b = pollCandidateFromQueue(balancedQ, team, globalAvgSkill);
                 if (b != null) { team.addMember(b); reserved.add(b); }
                 else {
+                    // Fallback: add any available participant
                     Participant any = pollAnyFromQueues(leadersQ, thinkersQ, balancedQ);
                     if (any != null) { team.addMember(any); reserved.add(any); }
                 }
             } else {
+                // Need at least 2 balanced participants
                 Participant b1 = pollCandidateFromQueue(balancedQ, team, globalAvgSkill);
                 Participant b2 = pollCandidateFromQueue(balancedQ, team, globalAvgSkill);
                 if (b1 != null) { team.addMember(b1); reserved.add(b1); }
                 if (b2 != null) { team.addMember(b2); reserved.add(b2); }
+                // Fill any remaining slots
                 if (team.getCurrentSize() < 3) {
                     Participant any = pollAnyFromQueues(leadersQ, thinkersQ, balancedQ);
                     if (any != null) { team.addMember(any); reserved.add(any); }
                 }
             }
 
+            // Check if team satisfies personality rules
             if (!satisfiesPersonalityRule(team)) {
+                // Rollback if rules not satisfied
                 for (Participant rp : reserved) try { team.removeMember(rp); } catch (Exception ignored) {}
                 return false;
             }
 
+            // Ensure team has sufficient role diversity
             if (team.getUniqueRoleCount() < MIN_ROLES) {
                 boolean improved = tryImproveRoleDiversity(team, leadersQ, thinkersQ, balancedQ, reserved, random);
                 if (!improved && team.getUniqueRoleCount() < MIN_ROLES) {
+                    // Rollback if role diversity insufficient
                     for (Participant rp : reserved) try { team.removeMember(rp); } catch (Exception ignored) {}
                     return false;
                 }
@@ -231,10 +281,12 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
             return true;
         }
 
+        // Handling for teams larger than 3
         Participant leader = pollCandidateFromQueue(leadersQ, team, globalAvgSkill);
         if (leader == null) return false;
         team.addMember(leader); reserved.add(leader);
 
+        // Determine target number of thinkers based on availability
         int targetThinkers;
         synchronized (thinkersQ) {
             if (thinkersQ.size() >= 2) {
@@ -244,6 +296,7 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
             }
         }
 
+        // Add thinkers up to target
         int assignedThinkers = 0;
         while (assignedThinkers < targetThinkers && !team.isFull()) {
             Participant t = pollCandidateFromQueue(thinkersQ, team, globalAvgSkill);
@@ -251,6 +304,7 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
             team.addMember(t); reserved.add(t); assignedThinkers++;
         }
 
+        // If not enough ideal thinkers, accept any thinkers
         if (assignedThinkers < targetThinkers) {
             while (assignedThinkers < targetThinkers && !team.isFull()) {
                 Participant t = pollAnyFromQueue(thinkersQ);
@@ -263,23 +317,27 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
             }
         }
 
+        // Fill remaining slots with balanced participants
         while (!team.isFull()) {
             Participant b = pollCandidateFromQueue(balancedQ, team, globalAvgSkill);
             if (b == null) break;
             team.addMember(b); reserved.add(b);
         }
 
+        // Fill any remaining slots with any available participants
         while (!team.isFull()) {
             Participant any = pollAnyFromQueues(leadersQ, thinkersQ, balancedQ);
             if (any == null) break;
             team.addMember(any); reserved.add(any);
         }
 
+        // Validate personality rules
         if (!satisfiesPersonalityRule(team)) {
             for (Participant rp : reserved) try { team.removeMember(rp); } catch (Exception ignored) {}
             return false;
         }
 
+        // Ensure role diversity
         if (team.getUniqueRoleCount() < MIN_ROLES) {
             boolean improved = tryImproveRoleDiversity(team, leadersQ, thinkersQ, balancedQ, reserved, random);
             if (!improved && team.getUniqueRoleCount() < MIN_ROLES) {
@@ -291,28 +349,35 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
         return true;
     }
 
+    // Attempts to improve role diversity by swapping participants
     private static boolean tryImproveRoleDiversity(Team team,
                                                    Queue<Participant> leadersQ,
                                                    Queue<Participant> thinkersQ,
                                                    Queue<Participant> balancedQ,
                                                    List<Participant> reserved,
                                                    Random random) {
+        // Identify current roles and missing roles
         Set<Role> present = new HashSet<>();
         for (Participant m : team.getMembers()) present.add(m.getPreferredRole());
         List<Role> missing = new ArrayList<>();
         for (Role r : Role.values()) if (!present.contains(r)) missing.add(r);
         if (missing.isEmpty()) return true;
+
+        // Search through participant pools for candidates with missing roles
         List<Queue<Participant>> pools = Arrays.asList(balancedQ, thinkersQ, leadersQ);
         for (Queue<Participant> pool : pools) {
             synchronized (pool) {
                 Iterator<Participant> it = pool.iterator();
                 while (it.hasNext()) {
                     Participant candidate = it.next();
+                    // If candidate has missing role and can join team
                     if (missing.contains(candidate.getPreferredRole()) && canAddToTeam(team, candidate)) {
+                        // Find a team member to replace (preferably one with duplicate role)
                         Participant toRemove = team.getMembers().stream()
                                 .filter(m -> !missing.contains(m.getPreferredRole()))
                                 .findFirst().orElse(null);
                         if (toRemove == null) toRemove = team.getMembers().get(0);
+                        // Attempt swap
                         boolean removed = team.removeMember(toRemove);
                         if (removed) {
                             boolean removedFromPool = pool.remove(candidate);
@@ -322,6 +387,7 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
                                 reserved.add(toRemove);
                                 return true;
                             } else {
+                                // Rollback if pool removal fails
                                 team.addMember(toRemove);
                             }
                         }
@@ -332,10 +398,12 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
         return false;
     }
 
+    // Public method to access spread threshold
     public static double getSpreadThresholdFrac() {
         return SPREAD_THRESHOLD_FRAC;
     }
 
+    // Polls from multiple queues in order of priority
     private static Participant pollAnyFromQueues(Queue<Participant> a, Queue<Participant> b, Queue<Participant> c) {
         Participant p = pollAnyFromQueue(a);
         if (p != null) return p;
@@ -344,15 +412,18 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
         return pollAnyFromQueue(c);
     }
 
+    // Polls any participant from a queue (no skill matching)
     private static Participant pollAnyFromQueue(Queue<Participant> q) {
         return q == null ? null : q.poll();
     }
 
+    // Polls the best-matching participant from a queue based on skill
     private static Participant pollCandidateFromQueue(Queue<Participant> q, Team team, double targetSkill) {
         if (q == null || q.isEmpty()) return null;
         synchronized (q) {
             Participant best = null;
             double bestDiff = Double.MAX_VALUE;
+            // Find participant with skill closest to target
             for (Participant p : q) {
                 if (!canAddToTeam(team, p)) continue;
                 double diff = Math.abs(p.getSkillLevel() - targetSkill);
@@ -369,10 +440,12 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
         }
     }
 
+    // Groups participants by personality type into shuffled queues
     private static Map<PersonalityType, Queue<Participant>> groupByPersonalityQueues(List<Participant> participants, Random random) {
         Map<PersonalityType, List<Participant>> groups = new EnumMap<>(PersonalityType.class);
         for (PersonalityType type : PersonalityType.values()) groups.put(type, new ArrayList<>());
         for (Participant p : participants) groups.get(p.getPersonalityType()).add(p);
+        // Shuffle each group for randomness
         for (List<Participant> list : groups.values()) Collections.shuffle(list, random);
         Map<PersonalityType, Queue<Participant>> queues = new EnumMap<>(PersonalityType.class);
         for (Map.Entry<PersonalityType, List<Participant>> e : groups.entrySet()) {
@@ -381,11 +454,13 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
         return queues;
     }
 
+    // Drains a queue into a list
     private static void drainQueueToList(Queue<Participant> q, List<Participant> out) {
         Participant p;
         while ((p = q.poll()) != null) out.add(p);
     }
 
+    // Writes leftover participants to CSV file
     private static void writeLeftoversCsv(List<Participant> leftovers) {
         try {
             Path dir = Paths.get("data");
@@ -414,10 +489,12 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
         }
     }
 
+    // Safe string handling for null values
     private static String safe(String s) {
         return s == null ? "" : s;
     }
 
+    // Escapes strings for CSV format
     private static String escapeCsv(String s) {
         if (s == null) return "";
         boolean need = s.contains(",") || s.contains("\"") || s.contains("\n") || s.contains("\r");
@@ -425,11 +502,13 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
         return need ? "\"" + esc + "\"" : esc;
     }
 
+    // Checks if a participant can be added to a team based on game constraints
     private static boolean canAddToTeam(Team team, Participant participant) {
         if (team.countByGame(participant.getPreferredGame()) >= MAX_SAME_GAME) return false;
         return true;
     }
 
+    // Validates all formed teams for constraints
     private static void validateTeams(List<Team> teams) throws TeamFormationException {
         for (Team team : teams) {
             if (team.getUniqueRoleCount() < MIN_ROLES) LOGGER.warning(team.getTeamId() + " has fewer than " + MIN_ROLES + " roles");
@@ -442,19 +521,23 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
         }
     }
 
+    // Checks if a team violates any constraints
     private static boolean teamViolates(Team t) {
         if (t.getUniqueRoleCount() < MIN_ROLES) return true;
         if (!satisfiesPersonalityRule(t)) return true;
         return false;
     }
 
+    // Public method to check team violations
     public static boolean teamViolatesPublic(Team t) {
         return teamViolates(t);
     }
 
+    // Checks if team satisfies personality composition rules
     private static boolean satisfiesPersonalityRule(Team t) {
         int leaders = countByPersonality(t, PersonalityType.LEADER);
         int thinkers = countByPersonality(t, PersonalityType.THINKER);
+        // Different rules based on team size
         if (t.getMaxSize() == 1) {
             return leaders == 1 || thinkers == 1 || countByPersonality(t, PersonalityType.BALANCED) == 1;
         }
@@ -465,9 +548,11 @@ public class MatchingAlgorithm implements TeamFormationStrategy {
         if (t.getMaxSize() == 3) {
             return leaders == 1 && (thinkers >= 1 || countByPersonality(t, PersonalityType.BALANCED) >= 2);
         }
+        // Standard rule for teams of 4+: exactly 1 leader, 1-2 thinkers
         return leaders == 1 && thinkers >= 1 && thinkers <= 2;
     }
 
+    // Counts participants with specific personality type in a team
     private static int countByPersonality(Team t, PersonalityType type) {
         return (int) t.getMembers().stream().filter(m -> m.getPersonalityType() == type).count();
     }
